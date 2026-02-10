@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+SQLAlchemy>=2.0
+psycopg[binary]>=3.1
+psycopg2-binary
+alembic>=1.13
+boto3
+python-dotenv
+requests

@@ -42,6 +42,7 @@ class Movie(Base):
     runtime = Column(Integer, nullable=True, comment="러닝타임(분)")
     synopsis = Column(Text, nullable=True, comment="시놉시스")
     poster_url = Column(String, nullable=True)
+    avg_rating = Column(Numeric(2, 1), nullable=True, comment="Average rating (0.5 steps)")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # Relationships

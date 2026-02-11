@@ -11,6 +11,7 @@ from schemas import (
     CommentResponse, CommentCreate, MessageResponse
 )
 from repositories.review import ReviewRepository
+from repositories.movie import MovieRepository
 
 router = APIRouter(prefix="/api/reviews", tags=["reviews"])
 
@@ -58,6 +59,7 @@ def create_review(
     review_data["user_id"] = user_id
     
     db_review = repo.create(review_data)
+    MovieRepository(db).recalc_avg_rating(db_review.movie_id)
     
     return ReviewResponse(
         id=db_review.id,
@@ -86,6 +88,7 @@ def update_review(
     if not db_review:
         raise HTTPException(status_code=404, detail="Review not found")
     
+    MovieRepository(db).recalc_avg_rating(db_review.movie_id)
     result = repo.get_with_counts(review_id)
     
     return ReviewResponse(
@@ -105,8 +108,12 @@ def delete_review(review_id: int, db: Session = Depends(get_db)):
     """Delete a review"""
     repo = ReviewRepository(db)
     
-    if not repo.delete(review_id):
+    review = repo.get(review_id)
+    if not review:
         raise HTTPException(status_code=404, detail="Review not found")
+
+    repo.delete(review_id)
+    MovieRepository(db).recalc_avg_rating(review.movie_id)
     
     return MessageResponse(message="Review deleted successfully")
 

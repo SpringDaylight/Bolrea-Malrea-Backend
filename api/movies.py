@@ -62,6 +62,7 @@ def get_movies(
             "runtime": movie.runtime,
             "synopsis": movie.synopsis,
             "poster_url": movie.poster_url,
+            "avg_rating": movie.avg_rating,
             "created_at": movie.created_at,
             "genres": [g.genre for g in movie.genres],
             "tags": [t.tag for t in movie.tags]
@@ -92,6 +93,7 @@ def get_movie(movie_id: int, db: Session = Depends(get_db)):
         runtime=movie.runtime,
         synopsis=movie.synopsis,
         poster_url=movie.poster_url,
+        avg_rating=movie.avg_rating,
         created_at=movie.created_at,
         genres=[g.genre for g in movie.genres],
         tags=[t.tag for t in movie.tags]
@@ -164,6 +166,7 @@ def create_movie_review(
     review_data["movie_id"] = movie_id
     
     db_review = review_repo.create(review_data)
+    movie_repo.recalc_avg_rating(movie_id)
     
     return ReviewResponse(
         id=db_review.id,
@@ -192,6 +195,7 @@ def create_movie(movie: MovieCreate, db: Session = Depends(get_db)):
         runtime=db_movie.runtime,
         synopsis=db_movie.synopsis,
         poster_url=db_movie.poster_url,
+        avg_rating=db_movie.avg_rating,
         created_at=db_movie.created_at,
         genres=[],
         tags=[]
@@ -216,6 +220,7 @@ def update_movie(movie_id: int, movie: MovieUpdate, db: Session = Depends(get_db
         runtime=db_movie.runtime,
         synopsis=db_movie.synopsis,
         poster_url=db_movie.poster_url,
+        avg_rating=db_movie.avg_rating,
         created_at=db_movie.created_at,
         genres=[g.genre for g in db_movie.genres],
         tags=[t.tag for t in db_movie.tags]
@@ -251,6 +256,7 @@ def get_movies_by_genre(
             runtime=movie.runtime,
             synopsis=movie.synopsis,
             poster_url=movie.poster_url,
+            avg_rating=movie.avg_rating,
             created_at=movie.created_at,
             genres=[g.genre for g in movie.genres],
             tags=[t.tag for t in movie.tags]
@@ -276,6 +282,7 @@ def get_popular_movies(
             runtime=movie.runtime,
             synopsis=movie.synopsis,
             poster_url=movie.poster_url,
+            avg_rating=movie.avg_rating,
             created_at=movie.created_at,
             genres=[g.genre for g in movie.genres],
             tags=[t.tag for t in movie.tags]

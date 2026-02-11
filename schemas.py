@@ -59,6 +59,7 @@ class MovieUpdate(BaseModel):
 class MovieResponse(MovieBase):
     id: int
     created_at: datetime
+    avg_rating: Optional[Decimal] = None
     genres: List[str] = []
     tags: List[str] = []
 

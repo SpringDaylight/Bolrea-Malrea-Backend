@@ -19,7 +19,11 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(String, primary_key=True)
+    user_id = Column(String, unique=True, index=True, nullable=True)
     name = Column(String, nullable=False)
+    nickname = Column(String, unique=True, index=True, nullable=True)
+    email = Column(String, unique=True, index=True, nullable=True)
+    password_hash = Column(String, nullable=True)
     avatar_text = Column(String, nullable=True, comment="씁쓸한 로맨스, 슬픈 코미디 같은 문구")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -30,6 +34,26 @@ class User(Base):
     taste_analysis = relationship("TasteAnalysis", back_populates="user", uselist=False, cascade="all, delete-orphan")
     group_decisions = relationship("GroupDecision", back_populates="owner", cascade="all, delete-orphan")
     group_memberships = relationship("GroupMember", back_populates="user", cascade="all, delete-orphan")
+    auth_accounts = relationship("UserAuth", back_populates="user", cascade="all, delete-orphan")
+
+
+class UserAuth(Base):
+    """Social auth accounts"""
+    __tablename__ = "user_auth"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    provider = Column(String, nullable=False)
+    provider_user_id = Column(String, nullable=False)
+    email = Column(String, nullable=True)
+    connected_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="auth_accounts")
+
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_user_id", name="uq_user_auth_provider_user"),
+        Index("ix_user_auth_provider_user", "provider", "provider_user_id"),
+    )
 
 
 class Movie(Base):

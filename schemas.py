@@ -14,6 +14,9 @@ from decimal import Decimal
 class UserBase(BaseModel):
     name: str
     avatar_text: Optional[str] = None
+    nickname: Optional[str] = None
+    email: Optional[str] = None
+    user_id: Optional[str] = None
 
 
 class UserCreate(UserBase):
@@ -23,6 +26,8 @@ class UserCreate(UserBase):
 class UserUpdate(BaseModel):
     name: Optional[str] = None
     avatar_text: Optional[str] = None
+    nickname: Optional[str] = None
+    email: Optional[str] = None
 
 
 class UserResponse(UserBase):
@@ -30,6 +35,20 @@ class UserResponse(UserBase):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class UserSignupRequest(BaseModel):
+    user_id: str
+    name: str
+    nickname: str
+    email: str
+    password: str
+    password_confirm: str
+
+
+class UserLoginRequest(BaseModel):
+    user_id: str
+    password: str
 
 
 # ============================================

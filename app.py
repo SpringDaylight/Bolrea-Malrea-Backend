@@ -19,7 +19,7 @@ from domain.a7_taste_map import build_taste_map
 app = FastAPI(
     title="Movie Recommendation API",
     description="정서·서사 기반 영화 취향 시뮬레이션 & 감성 검색 서비스",
-    version="1.0.4"
+    version="1.0.8"
 )
 
 # CORS middleware

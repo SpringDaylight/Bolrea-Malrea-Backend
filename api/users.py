@@ -32,6 +32,9 @@ def get_current_user(
     return UserResponse(
         id=user.id,
         name=user.name,
+        user_id=user.user_id,
+        nickname=user.nickname,
+        email=user.email,
         avatar_text=user.avatar_text,
         created_at=user.created_at
     )
@@ -46,6 +49,12 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
     existing = repo.get(user.id)
     if existing:
         raise HTTPException(status_code=400, detail="User already exists")
+    if user.user_id and repo.get_by_user_id(user.user_id):
+        raise HTTPException(status_code=400, detail="User ID already exists")
+    if user.nickname and repo.get_by_nickname(user.nickname):
+        raise HTTPException(status_code=400, detail="Nickname already exists")
+    if user.email and repo.get_by_email(user.email):
+        raise HTTPException(status_code=400, detail="Email already exists")
     
     user_data = user.model_dump()
     db_user = repo.create(user_data)
@@ -53,6 +62,9 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
     return UserResponse(
         id=db_user.id,
         name=db_user.name,
+        user_id=db_user.user_id,
+        nickname=db_user.nickname,
+        email=db_user.email,
         avatar_text=db_user.avatar_text,
         created_at=db_user.created_at
     )
@@ -76,9 +88,28 @@ def update_user(
     return UserResponse(
         id=db_user.id,
         name=db_user.name,
+        user_id=db_user.user_id,
+        nickname=db_user.nickname,
+        email=db_user.email,
         avatar_text=db_user.avatar_text,
         created_at=db_user.created_at
     )
+
+
+@router.delete("/me", response_model=MessageResponse)
+def delete_user(
+    user_id: str = Query(..., description="User ID"),
+    db: Session = Depends(get_db)
+):
+    """Delete current user account"""
+    repo = UserRepository(db)
+    user = repo.get(user_id)
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    repo.delete(user_id)
+    return MessageResponse(message="User deleted successfully")
 
 
 @router.get("/me/reviews", response_model=ReviewListResponse)
@@ -148,6 +179,9 @@ def get_user(user_id: str, db: Session = Depends(get_db)):
     return UserResponse(
         id=user.id,
         name=user.name,
+        user_id=user.user_id,
+        nickname=user.nickname,
+        email=user.email,
         avatar_text=user.avatar_text,
         created_at=user.created_at
     )

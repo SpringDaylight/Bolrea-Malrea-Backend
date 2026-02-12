@@ -3,7 +3,7 @@ Movie repository with custom queries
 """
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import or_, and_
+from sqlalchemy import or_, and_, func
 
 from models import Movie, MovieGenre, MovieTag, Review
 from repositories.base import BaseRepository
@@ -127,8 +127,6 @@ class MovieRepository(BaseRepository[Movie]):
     
     def get_popular(self, limit: int = 20) -> List[Movie]:
         """Get popular movies (by review count)"""
-        from sqlalchemy import func
-        
         return (
             self.db.query(Movie)
             .outerjoin(Review)
@@ -138,6 +136,23 @@ class MovieRepository(BaseRepository[Movie]):
             .limit(limit)
             .all()
         )
+
+    def recalc_avg_rating(self, movie_id: int) -> Optional[float]:
+        """Recalculate and persist avg_rating for a movie (rounded to 0.5 steps)"""
+        avg_rating = (
+            self.db.query((func.round(func.avg(Review.rating) * 2) / 2))
+            .filter(Review.movie_id == movie_id)
+            .scalar()
+        )
+
+        movie = self.get(movie_id)
+        if not movie:
+            return None
+
+        movie.avg_rating = avg_rating
+        self.db.commit()
+        self.db.refresh(movie)
+        return movie.avg_rating
     
     def add_genre(self, movie_id: int, genre: str) -> bool:
         """Add genre to movie"""

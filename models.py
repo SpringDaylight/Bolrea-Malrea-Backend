@@ -19,7 +19,11 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(String, primary_key=True)
+    user_id = Column(String, unique=True, index=True, nullable=True)
     name = Column(String, nullable=False)
+    nickname = Column(String, unique=True, index=True, nullable=True)
+    email = Column(String, unique=True, index=True, nullable=True)
+    password_hash = Column(String, nullable=True)
     avatar_text = Column(String, nullable=True, comment="씁쓸한 로맨스, 슬픈 코미디 같은 문구")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -45,6 +49,26 @@ class User(Base):
     flavor_stats = relationship("FlavorStat", back_populates="user", cascade="all, delete-orphan")
     inventory = relationship("ThemeInventory", back_populates="user", cascade="all, delete-orphan")
     history = relationship("QuestionHistory", back_populates="user", cascade="all, delete-orphan")
+    auth_accounts = relationship("UserAuth", back_populates="user", cascade="all, delete-orphan")
+
+
+class UserAuth(Base):
+    """Social auth accounts"""
+    __tablename__ = "user_auth"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    provider = Column(String, nullable=False)
+    provider_user_id = Column(String, nullable=False)
+    email = Column(String, nullable=True)
+    connected_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="auth_accounts")
+
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_user_id", name="uq_user_auth_provider_user"),
+        Index("ix_user_auth_provider_user", "provider", "provider_user_id"),
+    )
 
 
 class Movie(Base):
@@ -57,6 +81,7 @@ class Movie(Base):
     runtime = Column(Integer, nullable=True, comment="러닝타임(분)")
     synopsis = Column(Text, nullable=True, comment="시놉시스")
     poster_url = Column(String, nullable=True)
+    avg_rating = Column(Numeric(2, 1), nullable=True, comment="Average rating (0.5 steps)")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # Relationships
@@ -126,6 +151,7 @@ class Comment(Base):
 
     id = Column(Integer, primary_key=True)
     review_id = Column(Integer, ForeignKey("reviews.id", ondelete="CASCADE"), nullable=False, index=True)
+    parent_comment_id = Column(Integer, ForeignKey("comments.id", ondelete="CASCADE"), nullable=True, index=True)
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     content = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -133,6 +159,7 @@ class Comment(Base):
     # Relationships
     review = relationship("Review", back_populates="comments")
     user = relationship("User", back_populates="comments")
+    parent = relationship("Comment", remote_side=[id], backref="replies")
 
 
 class ReviewLike(Base):

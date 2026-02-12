@@ -3,7 +3,7 @@ from uuid import uuid4
 from passlib.context import CryptContext
 
 
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+_pwd_context = CryptContext(schemes=["argon2", "bcrypt"], deprecated="auto")
 
 
 def hash_password(password: str) -> str:

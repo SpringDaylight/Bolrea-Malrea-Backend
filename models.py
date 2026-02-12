@@ -240,6 +240,7 @@ class UserPreference(Base):
     preference_vector_json = Column(JSONB, nullable=False, default=dict, comment="emotion_scores, narrative_traits, ending_preference")
     persona_code = Column(String, nullable=True, comment="사용자 페르소나 코드")
     boost_tags = Column(JSONB, nullable=False, default=list, comment="좋아하는 태그 리스트")
+    dislike_tags = Column(JSONB, nullable=False, default=list, comment="제외/비선호 태그 리스트")
     penalty_tags = Column(JSONB, nullable=False, default=list, comment="싫어하는 태그 리스트")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -252,7 +253,10 @@ class MovieVector(Base):
     movie_id = Column(Integer, ForeignKey("movies.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
     emotion_scores = Column(JSONB, nullable=False, default=dict, comment="감정 태그 점수")
     narrative_traits = Column(JSONB, nullable=False, default=dict, comment="서사 특성 점수")
+    direction_mood = Column(JSONB, nullable=False, default=dict, comment="연출/분위기 점수")
+    character_relationship = Column(JSONB, nullable=False, default=dict, comment="캐릭터 관계 점수")
     ending_preference = Column(JSONB, nullable=False, default=dict, comment="결말 선호도")
+    embedding_text = Column(Text, nullable=True, comment="임베딩 생성용 텍스트")
     embedding_vector = Column(JSONB, nullable=True, default=list, comment="임베딩 벡터 (향후 벡터 검색용)")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

@@ -139,11 +139,17 @@ class CommentBase(BaseSchema):
 
 class CommentCreate(CommentBase):
     review_id: int
+    parent_comment_id: Optional[int] = None
+
+
+class CommentUpdate(BaseSchema):
+    content: Optional[str] = None
 
 
 class CommentResponse(CommentBase):
     id: int
     review_id: int
+    parent_comment_id: Optional[int] = None
     user_id: str
     created_at: datetime
 

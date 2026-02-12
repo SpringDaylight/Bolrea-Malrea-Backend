@@ -92,13 +92,51 @@ class ReviewRepository(BaseRepository[Review]):
         self.db.commit()
         return True
     
-    def add_comment(self, review_id: int, user_id: str, content: str) -> Comment:
-        """Add comment to review"""
-        comment = Comment(review_id=review_id, user_id=user_id, content=content)
+    def add_comment(
+        self,
+        review_id: int,
+        user_id: str,
+        content: str,
+        parent_comment_id: Optional[int] = None
+    ) -> Comment:
+        """Add comment to review (optionally as a reply)"""
+        comment = Comment(
+            review_id=review_id,
+            user_id=user_id,
+            content=content,
+            parent_comment_id=parent_comment_id,
+        )
         self.db.add(comment)
         self.db.commit()
         self.db.refresh(comment)
         return comment
+
+    def get_comment(self, comment_id: int) -> Optional[Comment]:
+        """Get comment by ID"""
+        return self.db.query(Comment).filter(Comment.id == comment_id).first()
+
+    def update_comment(self, comment_id: int, content: Optional[str]) -> Optional[Comment]:
+        """Update comment content"""
+        comment = self.get_comment(comment_id)
+        if not comment:
+            return None
+
+        if content is not None:
+            comment.content = content
+
+        self.db.commit()
+        self.db.refresh(comment)
+        return comment
+
+    def delete_comment(self, comment_id: int) -> bool:
+        """Delete comment by ID"""
+        comment = self.get_comment(comment_id)
+        if not comment:
+            return False
+
+        self.db.delete(comment)
+        self.db.commit()
+        return True
     
     def get_comments(self, review_id: int, skip: int = 0, limit: int = 50) -> List[Comment]:
         """Get comments for a review"""

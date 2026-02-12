@@ -136,6 +136,7 @@ class Comment(Base):
 
     id = Column(Integer, primary_key=True)
     review_id = Column(Integer, ForeignKey("reviews.id", ondelete="CASCADE"), nullable=False, index=True)
+    parent_comment_id = Column(Integer, ForeignKey("comments.id", ondelete="CASCADE"), nullable=True, index=True)
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     content = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -143,6 +144,7 @@ class Comment(Base):
     # Relationships
     review = relationship("Review", back_populates="comments")
     user = relationship("User", back_populates="comments")
+    parent = relationship("Comment", remote_side=[id], backref="replies")
 
 
 class ReviewLike(Base):

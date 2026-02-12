@@ -27,6 +27,16 @@ class User(Base):
     avatar_text = Column(String, nullable=True, comment="씁쓸한 로맨스, 슬픈 코미디 같은 문구")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
+    # Gamification Fields
+    level = Column(Integer, default=1)
+    exp = Column(Integer, default=0)
+    popcorn = Column(Integer, default=0)
+    main_flavor = Column(String, default="Sweet")
+    stage = Column(String, default="Egg")
+    last_feeding_date = Column(String, nullable=True) # YYYY-MM-DD
+    last_question_date = Column(String, nullable=True) # YYYY-MM-DD
+    current_question_index = Column(Integer, default=0)
+
     # Relationships
     reviews = relationship("Review", back_populates="user", cascade="all, delete-orphan")
     review_likes = relationship("ReviewLike", back_populates="user", cascade="all, delete-orphan")
@@ -34,6 +44,11 @@ class User(Base):
     taste_analysis = relationship("TasteAnalysis", back_populates="user", uselist=False, cascade="all, delete-orphan")
     group_decisions = relationship("GroupDecision", back_populates="owner", cascade="all, delete-orphan")
     group_memberships = relationship("GroupMember", back_populates="user", cascade="all, delete-orphan")
+    
+    # Gamification Relationships
+    flavor_stats = relationship("FlavorStat", back_populates="user", cascade="all, delete-orphan")
+    inventory = relationship("ThemeInventory", back_populates="user", cascade="all, delete-orphan")
+    history = relationship("QuestionHistory", back_populates="user", cascade="all, delete-orphan")
     auth_accounts = relationship("UserAuth", back_populates="user", cascade="all, delete-orphan")
 
 
@@ -238,3 +253,46 @@ class MovieVector(Base):
     ending_preference = Column(JSONB, nullable=False, default=dict, comment="결말 선호도")
     embedding_vector = Column(JSONB, nullable=True, default=list, comment="임베딩 벡터 (향후 벡터 검색용)")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+# ============================================
+# Gamification Models
+# ============================================
+
+class FlavorStat(Base):
+    __tablename__ = 'flavor_stats'
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
+    flavor_name = Column(String, nullable=False)
+    score = Column(Integer, default=0)
+
+    user = relationship("User", back_populates="flavor_stats")
+
+    __table_args__ = (UniqueConstraint('user_id', 'flavor_name', name='_user_flavor_uc'),)
+
+
+class ThemeInventory(Base):
+    __tablename__ = 'theme_inventory'
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
+    
+    theme_id = Column(String, nullable=False) # e.g., 'dark', 'pink'
+    is_applied = Column(Boolean, default=False)
+    acquired_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", back_populates="inventory")
+
+
+class QuestionHistory(Base):
+    __tablename__ = 'question_history'
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
+    
+    date = Column(String, nullable=False) # YYYY-MM-DD
+    question = Column(String, nullable=False)
+    answer = Column(Text, nullable=False)
+
+    user = relationship("User", back_populates="history")

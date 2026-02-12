@@ -53,6 +53,7 @@ class UserSignupRequest(BaseSchema):
     email: str
     password: str
     password_confirm: str
+    birth_date: Optional[date] = None
 
 
 class UserLoginRequest(BaseSchema):

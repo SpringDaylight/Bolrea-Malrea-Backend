@@ -19,6 +19,7 @@ from utils.security import (
     validate_password_policy,
     generate_user_pk,
 )
+from datetime import date
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -131,6 +132,16 @@ def signup(payload: UserSignupRequest, db: Session = Depends(get_db)):
     if payload.password != payload.password_confirm:
         raise HTTPException(status_code=400, detail="Password confirmation does not match")
 
+    if payload.birth_date:
+        today = date.today()
+        if payload.birth_date > today:
+            raise HTTPException(status_code=400, detail="Birth date cannot be in the future")
+        age = today.year - payload.birth_date.year - (
+            (today.month, today.day) < (payload.birth_date.month, payload.birth_date.day)
+        )
+        if age > 120:
+            raise HTTPException(status_code=400, detail="Birth date is not valid")
+
     if not validate_password_policy(payload.password):
         raise HTTPException(
             status_code=400,
@@ -152,6 +163,7 @@ def signup(payload: UserSignupRequest, db: Session = Depends(get_db)):
             "nickname": payload.nickname,
             "email": payload.email,
             "password_hash": hash_password(payload.password),
+            "birth_date": payload.birth_date,
         }
     )
 

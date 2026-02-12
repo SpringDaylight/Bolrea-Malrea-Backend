@@ -24,6 +24,8 @@ class User(Base):
     nickname = Column(String, unique=True, index=True, nullable=True)
     email = Column(String, unique=True, index=True, nullable=True)
     password_hash = Column(String, nullable=True)
+    birth_date = Column(Date, nullable=True, comment="User birth date")
+    gender = Column(String, nullable=True, comment="User gender")
     avatar_text = Column(String, nullable=True, comment="씁쓸한 로맨스, 슬픈 코미디 같은 문구")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 

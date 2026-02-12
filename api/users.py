@@ -35,6 +35,8 @@ def get_current_user(
         user_id=user.user_id,
         nickname=user.nickname,
         email=user.email,
+        birth_date=user.birth_date,
+        gender=user.gender,
         avatar_text=user.avatar_text,
         created_at=user.created_at
     )
@@ -65,6 +67,8 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
         user_id=db_user.user_id,
         nickname=db_user.nickname,
         email=db_user.email,
+        birth_date=db_user.birth_date,
+        gender=db_user.gender,
         avatar_text=db_user.avatar_text,
         created_at=db_user.created_at
     )
@@ -91,6 +95,8 @@ def update_user(
         user_id=db_user.user_id,
         nickname=db_user.nickname,
         email=db_user.email,
+        birth_date=db_user.birth_date,
+        gender=db_user.gender,
         avatar_text=db_user.avatar_text,
         created_at=db_user.created_at
     )
@@ -182,6 +188,8 @@ def get_user(user_id: str, db: Session = Depends(get_db)):
         user_id=user.user_id,
         nickname=user.nickname,
         email=user.email,
+        birth_date=user.birth_date,
+        gender=user.gender,
         avatar_text=user.avatar_text,
         created_at=user.created_at
     )

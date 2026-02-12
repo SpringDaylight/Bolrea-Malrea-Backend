@@ -24,6 +24,8 @@ class UserBase(BaseSchema):
     nickname: Optional[str] = None
     email: Optional[str] = None
     user_id: Optional[str] = None
+    birth_date: Optional[date] = None
+    gender: Optional[str] = None
 
 
 class UserCreate(UserBase):
@@ -35,6 +37,8 @@ class UserUpdate(BaseSchema):
     avatar_text: Optional[str] = None
     nickname: Optional[str] = None
     email: Optional[str] = None
+    birth_date: Optional[date] = None
+    gender: Optional[str] = None
 
 
 class UserResponse(UserBase):

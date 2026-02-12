@@ -7,4 +7,4 @@ alembic>=1.13
 boto3
 python-dotenv
 requests
-passlib[bcrypt]
+passlib[argon2,bcrypt]

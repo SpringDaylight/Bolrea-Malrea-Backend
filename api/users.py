@@ -49,6 +49,12 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
     existing = repo.get(user.id)
     if existing:
         raise HTTPException(status_code=400, detail="User already exists")
+    if user.user_id and repo.get_by_user_id(user.user_id):
+        raise HTTPException(status_code=400, detail="User ID already exists")
+    if user.nickname and repo.get_by_nickname(user.nickname):
+        raise HTTPException(status_code=400, detail="Nickname already exists")
+    if user.email and repo.get_by_email(user.email):
+        raise HTTPException(status_code=400, detail="Email already exists")
     
     user_data = user.model_dump()
     db_user = repo.create(user_data)

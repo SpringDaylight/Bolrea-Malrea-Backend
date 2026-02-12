@@ -90,6 +90,22 @@ def update_user(
     )
 
 
+@router.delete("/me", response_model=MessageResponse)
+def delete_user(
+    user_id: str = Query(..., description="User ID"),
+    db: Session = Depends(get_db)
+):
+    """Delete current user account"""
+    repo = UserRepository(db)
+    user = repo.get(user_id)
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    repo.delete(user_id)
+    return MessageResponse(message="User deleted successfully")
+
+
 @router.get("/me/reviews", response_model=ReviewListResponse)
 def get_user_reviews(
     user_id: str = Query(..., description="User ID"),

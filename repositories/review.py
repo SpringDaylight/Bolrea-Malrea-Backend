@@ -144,7 +144,8 @@ class ReviewRepository(BaseRepository[Review]):
         review_id: int,
         user_id: str,
         content: str,
-        parent_comment_id: Optional[int] = None
+        parent_comment_id: Optional[int] = None,
+        is_public: bool = True,
     ) -> Comment:
         """Add comment to review (optionally as a reply)"""
         comment = Comment(
@@ -152,6 +153,7 @@ class ReviewRepository(BaseRepository[Review]):
             user_id=user_id,
             content=content,
             parent_comment_id=parent_comment_id,
+            is_public=is_public,
         )
         self.db.add(comment)
         self.db.commit()
@@ -162,7 +164,12 @@ class ReviewRepository(BaseRepository[Review]):
         """Get comment by ID"""
         return self.db.query(Comment).filter(Comment.id == comment_id).first()
 
-    def update_comment(self, comment_id: int, content: Optional[str]) -> Optional[Comment]:
+    def update_comment(
+        self,
+        comment_id: int,
+        content: Optional[str],
+        is_public: Optional[bool] = None
+    ) -> Optional[Comment]:
         """Update comment content"""
         comment = self.get_comment(comment_id)
         if not comment:
@@ -170,6 +177,8 @@ class ReviewRepository(BaseRepository[Review]):
 
         if content is not None:
             comment.content = content
+        if is_public is not None:
+            comment.is_public = is_public
 
         self.db.commit()
         self.db.refresh(comment)
@@ -185,13 +194,32 @@ class ReviewRepository(BaseRepository[Review]):
         self.db.commit()
         return True
     
-    def get_comments(self, review_id: int, skip: int = 0, limit: int = 50) -> List[Comment]:
-        """Get comments for a review with user info"""
-        return (
+    def get_comments(
+        self,
+        review_id: int,
+        skip: int = 0,
+        limit: int = 50,
+        viewer_user_id: Optional[str] = None,
+        review_owner_id: Optional[str] = None,
+    ) -> List[Comment]:
+        """Get comments for a review with visibility rules"""
+        query = (
             self.db.query(Comment)
             .options(joinedload(Comment.user))
             .filter(Comment.review_id == review_id)
-            .order_by(Comment.created_at.asc())
+        )
+
+        if viewer_user_id and review_owner_id and viewer_user_id == review_owner_id:
+            pass
+        elif viewer_user_id:
+            query = query.filter(
+                or_(Comment.is_public == True, Comment.user_id == viewer_user_id)
+            )
+        else:
+            query = query.filter(Comment.is_public == True)
+
+        return (
+            query.order_by(Comment.created_at.asc())
             .offset(skip)
             .limit(limit)
             .all()

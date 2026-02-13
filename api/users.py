@@ -10,7 +10,8 @@ from schemas import (
     UserResponse, UserCreate, UserUpdate,
     ReviewResponse, ReviewListResponse,
     TasteAnalysisResponse, MessageResponse,
-    WatchedMovieCreate, WatchedMovieListResponse, WatchedMovieResponse
+    WatchedMovieCreate, WatchedMovieListResponse, WatchedMovieResponse,
+    UserSearchResponse, UserSearchItem
 )
 from repositories.user import UserRepository
 from repositories.review import ReviewRepository
@@ -43,6 +44,27 @@ def get_current_user(
         avatar_text=user.avatar_text,
         created_at=user.created_at
     )
+
+
+@router.get("/search", response_model=UserSearchResponse)
+def search_users(
+    query: str = Query(..., min_length=1, description="Search by user_id, nickname, or email"),
+    limit: int = Query(20, ge=1, le=50),
+    db: Session = Depends(get_db)
+):
+    """Search users for group assignment"""
+    repo = UserRepository(db)
+    users = repo.search(query, limit=limit)
+    items = [
+        UserSearchItem(
+            id=user.id,
+            user_id=user.user_id,
+            nickname=user.nickname,
+            avatar_text=user.avatar_text,
+        )
+        for user in users
+    ]
+    return UserSearchResponse(users=items)
 
 
 @router.post("", response_model=UserResponse, status_code=201)

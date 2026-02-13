@@ -3,6 +3,7 @@ User repository with custom queries
 """
 from typing import Optional
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from models import User, TasteAnalysis
 from repositories.base import BaseRepository
@@ -29,6 +30,25 @@ class UserRepository(BaseRepository[User]):
     def get_by_nickname(self, nickname: str) -> Optional[User]:
         """Get user by nickname"""
         return self.db.query(User).filter(User.nickname == nickname).first()
+
+    def search(self, query: str, limit: int = 20) -> list[User]:
+        """Search users by user_id, nickname, or email"""
+        if not query:
+            return []
+        pattern = f"%{query}%"
+        return (
+            self.db.query(User)
+            .filter(
+                or_(
+                    User.user_id.ilike(pattern),
+                    User.nickname.ilike(pattern),
+                    User.email.ilike(pattern),
+                )
+            )
+            .order_by(User.nickname.asc().nulls_last(), User.user_id.asc().nulls_last())
+            .limit(limit)
+            .all()
+        )
     
     def get_taste_analysis(self, user_id: str) -> Optional[TasteAnalysis]:
         """Get user's taste analysis"""

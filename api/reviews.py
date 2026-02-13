@@ -183,7 +183,13 @@ def get_comments(
     if not review or (not review.is_public and review.user_id != user_id):
         raise HTTPException(status_code=404, detail="Review not found")
     
-    comments = repo.get_comments(review_id, skip=skip, limit=limit)
+    comments = repo.get_comments(
+        review_id,
+        skip=skip,
+        limit=limit,
+        viewer_user_id=user_id,
+        review_owner_id=review.user_id,
+    )
     
     return [
         CommentResponse(
@@ -223,6 +229,7 @@ def create_comment(
         user_id,
         comment.content,
         parent_comment_id=comment.parent_comment_id,
+        is_public=comment.is_public,
     )
     
     # Refresh to get user relationship
@@ -243,11 +250,18 @@ def create_comment(
 def update_comment(
     comment_id: int,
     payload: CommentUpdate,
+    user_id: str = Query(..., description="User ID"),
     db: Session = Depends(get_db)
 ):
     """Update comment content"""
     repo = ReviewRepository(db)
-    db_comment = repo.update_comment(comment_id, payload.content)
+    existing = repo.get_comment(comment_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    if existing.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Not allowed to edit this comment")
+
+    db_comment = repo.update_comment(comment_id, payload.content, payload.is_public)
 
     if not db_comment:
         raise HTTPException(status_code=404, detail="Comment not found")
@@ -269,10 +283,17 @@ def update_comment(
 @router.delete("/comments/{comment_id}", response_model=MessageResponse)
 def delete_comment(
     comment_id: int,
+    user_id: str = Query(..., description="User ID"),
     db: Session = Depends(get_db)
 ):
     """Delete a comment"""
     repo = ReviewRepository(db)
+    existing = repo.get_comment(comment_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    if existing.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Not allowed to delete this comment")
+
     deleted = repo.delete_comment(comment_id)
 
     if not deleted:

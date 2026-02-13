@@ -155,6 +155,7 @@ class ReviewListResponse(BaseSchema):
 
 class CommentBase(BaseSchema):
     content: str
+    is_public: bool = True
 
 
 class CommentCreate(CommentBase):
@@ -164,6 +165,7 @@ class CommentCreate(CommentBase):
 
 class CommentUpdate(BaseSchema):
     content: Optional[str] = None
+    is_public: Optional[bool] = None
 
 
 class CommentResponse(CommentBase):

@@ -46,6 +46,7 @@ class User(Base):
     taste_analysis = relationship("TasteAnalysis", back_populates="user", uselist=False, cascade="all, delete-orphan")
     group_decisions = relationship("GroupDecision", back_populates="owner", cascade="all, delete-orphan")
     group_memberships = relationship("GroupMember", back_populates="user", cascade="all, delete-orphan")
+    watched_movies = relationship("WatchedMovie", back_populates="user", cascade="all, delete-orphan")
     
     # Gamification Relationships
     flavor_stats = relationship("FlavorStat", back_populates="user", cascade="all, delete-orphan")
@@ -90,6 +91,7 @@ class Movie(Base):
     genres = relationship("MovieGenre", back_populates="movie", cascade="all, delete-orphan")
     tags = relationship("MovieTag", back_populates="movie", cascade="all, delete-orphan")
     reviews = relationship("Review", back_populates="movie", cascade="all, delete-orphan")
+    watched_by = relationship("WatchedMovie", back_populates="movie", cascade="all, delete-orphan")
 
 
 class MovieGenre(Base):
@@ -323,3 +325,21 @@ class QuestionHistory(Base):
     answer = Column(Text, nullable=False)
 
     user = relationship("User", back_populates="history")
+
+
+class WatchedMovie(Base):
+    """User watched movies"""
+    __tablename__ = "watched_movies"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    movie_id = Column(Integer, ForeignKey("movies.id", ondelete="CASCADE"), nullable=False, index=True)
+    watched_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="watched_movies")
+    movie = relationship("Movie", back_populates="watched_by")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "movie_id", name="uq_user_movie_watched"),
+        Index("ix_watched_movies_user_movie", "user_id", "movie_id"),
+    )

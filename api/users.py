@@ -9,10 +9,13 @@ from db import get_db
 from schemas import (
     UserResponse, UserCreate, UserUpdate,
     ReviewResponse, ReviewListResponse,
-    TasteAnalysisResponse, MessageResponse
+    TasteAnalysisResponse, MessageResponse,
+    WatchedMovieCreate, WatchedMovieListResponse, WatchedMovieResponse
 )
 from repositories.user import UserRepository
 from repositories.review import ReviewRepository
+from repositories.watched import WatchedMovieRepository
+from repositories.movie import MovieRepository
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -153,6 +156,81 @@ def get_user_reviews(
         )
     
     return ReviewListResponse(reviews=review_responses, total=total)
+
+
+@router.get("/me/watched", response_model=WatchedMovieListResponse)
+def get_watched_movies(
+    user_id: str = Query(..., description="User ID"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db)
+):
+    """Get current user's watched movies"""
+    repo = WatchedMovieRepository(db)
+    skip = (page - 1) * page_size
+
+    items = repo.get_by_user(user_id, skip=skip, limit=page_size)
+    total = repo.count_by_user(user_id)
+
+    response_items = [
+        WatchedMovieResponse(
+            movie_id=item.movie_id,
+            title=item.movie.title if item.movie else "",
+            poster_url=item.movie.poster_url if item.movie else None,
+            watched_at=item.watched_at,
+        )
+        for item in items
+    ]
+
+    return WatchedMovieListResponse(items=response_items, total=total)
+
+
+@router.post("/me/watched", response_model=WatchedMovieResponse, status_code=201)
+def add_watched_movie(
+    payload: WatchedMovieCreate,
+    user_id: str = Query(..., description="User ID"),
+    db: Session = Depends(get_db)
+):
+    """Mark a movie as watched for current user"""
+    movie_repo = MovieRepository(db)
+    if not movie_repo.get(payload.movie_id):
+        raise HTTPException(status_code=404, detail="Movie not found")
+
+    repo = WatchedMovieRepository(db)
+    existing = repo.get(user_id, payload.movie_id)
+    if existing:
+        movie = existing.movie
+        return WatchedMovieResponse(
+            movie_id=existing.movie_id,
+            title=movie.title if movie else "",
+            poster_url=movie.poster_url if movie else None,
+            watched_at=existing.watched_at,
+        )
+
+    record = repo.create(user_id, payload.movie_id)
+    db.refresh(record)
+    movie = record.movie
+    return WatchedMovieResponse(
+        movie_id=record.movie_id,
+        title=movie.title if movie else "",
+        poster_url=movie.poster_url if movie else None,
+        watched_at=record.watched_at,
+    )
+
+
+@router.delete("/me/watched/{movie_id}", response_model=MessageResponse)
+def remove_watched_movie(
+    movie_id: int,
+    user_id: str = Query(..., description="User ID"),
+    db: Session = Depends(get_db)
+):
+    """Unmark a movie as watched for current user"""
+    repo = WatchedMovieRepository(db)
+    deleted = repo.delete(user_id, movie_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Watched record not found")
+
+    return MessageResponse(message="Watched movie removed successfully")
 
 
 @router.get("/me/taste-analysis", response_model=TasteAnalysisResponse)

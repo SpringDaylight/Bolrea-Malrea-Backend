@@ -182,6 +182,26 @@ class LikeResponse(BaseSchema):
 
 
 # ============================================
+# Watched Movie Schemas
+# ============================================
+
+class WatchedMovieCreate(BaseSchema):
+    movie_id: int
+
+
+class WatchedMovieResponse(BaseSchema):
+    movie_id: int
+    title: str
+    poster_url: Optional[str] = None
+    watched_at: datetime
+
+
+class WatchedMovieListResponse(BaseSchema):
+    items: List[WatchedMovieResponse]
+    total: int
+
+
+# ============================================
 # Taste Analysis Schemas
 # ============================================
 

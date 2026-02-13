@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from db import get_db
 from schemas import (
     MovieResponse, MovieListResponse, MovieCreate, MovieUpdate, MessageResponse,
-    ReviewResponse, ReviewListResponse, ReviewCreate
+    ReviewResponse, ReviewListResponse
 )
 from repositories.movie import MovieRepository
 from repositories.review import ReviewRepository
@@ -62,6 +62,7 @@ def get_movies(
             "runtime": movie.runtime,
             "synopsis": movie.synopsis,
             "poster_url": movie.poster_url,
+            "avg_rating": movie.avg_rating,
             "created_at": movie.created_at,
             "genres": [g.genre for g in movie.genres],
             "tags": [t.tag for t in movie.tags]
@@ -92,6 +93,7 @@ def get_movie(movie_id: int, db: Session = Depends(get_db)):
         runtime=movie.runtime,
         synopsis=movie.synopsis,
         poster_url=movie.poster_url,
+        avg_rating=movie.avg_rating,
         created_at=movie.created_at,
         genres=[g.genre for g in movie.genres],
         tags=[t.tag for t in movie.tags]
@@ -136,46 +138,6 @@ def get_movie_reviews(
     return ReviewListResponse(reviews=review_responses, total=total)
 
 
-@router.post("/{movie_id}/reviews", response_model=ReviewResponse, status_code=201)
-def create_movie_review(
-    movie_id: int,
-    review: ReviewCreate,
-    user_id: str = Query(..., description="User ID"),
-    db: Session = Depends(get_db)
-):
-    """Create a review for a specific movie"""
-    # Check if movie exists
-    movie_repo = MovieRepository(db)
-    if not movie_repo.get(movie_id):
-        raise HTTPException(status_code=404, detail="Movie not found")
-    
-    review_repo = ReviewRepository(db)
-    
-    # Check if user already reviewed this movie
-    existing = review_repo.get_user_review_for_movie(user_id, movie_id)
-    if existing:
-        raise HTTPException(
-            status_code=400,
-            detail="User already reviewed this movie. Use PUT to update."
-        )
-    
-    review_data = review.model_dump()
-    review_data["user_id"] = user_id
-    review_data["movie_id"] = movie_id
-    
-    db_review = review_repo.create(review_data)
-    
-    return ReviewResponse(
-        id=db_review.id,
-        user_id=db_review.user_id,
-        movie_id=db_review.movie_id,
-        rating=db_review.rating,
-        content=db_review.content,
-        created_at=db_review.created_at,
-        likes_count=0,
-        comments_count=0
-    )
-
 
 @router.post("", response_model=MovieResponse, status_code=201)
 def create_movie(movie: MovieCreate, db: Session = Depends(get_db)):
@@ -192,6 +154,7 @@ def create_movie(movie: MovieCreate, db: Session = Depends(get_db)):
         runtime=db_movie.runtime,
         synopsis=db_movie.synopsis,
         poster_url=db_movie.poster_url,
+        avg_rating=db_movie.avg_rating,
         created_at=db_movie.created_at,
         genres=[],
         tags=[]
@@ -216,6 +179,7 @@ def update_movie(movie_id: int, movie: MovieUpdate, db: Session = Depends(get_db
         runtime=db_movie.runtime,
         synopsis=db_movie.synopsis,
         poster_url=db_movie.poster_url,
+        avg_rating=db_movie.avg_rating,
         created_at=db_movie.created_at,
         genres=[g.genre for g in db_movie.genres],
         tags=[t.tag for t in db_movie.tags]
@@ -251,6 +215,7 @@ def get_movies_by_genre(
             runtime=movie.runtime,
             synopsis=movie.synopsis,
             poster_url=movie.poster_url,
+            avg_rating=movie.avg_rating,
             created_at=movie.created_at,
             genres=[g.genre for g in movie.genres],
             tags=[t.tag for t in movie.tags]
@@ -276,6 +241,7 @@ def get_popular_movies(
             runtime=movie.runtime,
             synopsis=movie.synopsis,
             poster_url=movie.poster_url,
+            avg_rating=movie.avg_rating,
             created_at=movie.created_at,
             genres=[g.genre for g in movie.genres],
             tags=[t.tag for t in movie.tags]

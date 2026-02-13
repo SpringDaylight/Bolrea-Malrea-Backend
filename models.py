@@ -19,7 +19,13 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(String, primary_key=True)
+    user_id = Column(String, unique=True, index=True, nullable=True)
     name = Column(String, nullable=False)
+    nickname = Column(String, unique=True, index=True, nullable=True)
+    email = Column(String, unique=True, index=True, nullable=True)
+    password_hash = Column(String, nullable=True)
+    birth_date = Column(Date, nullable=True, comment="User birth date")
+    gender = Column(String, nullable=True, comment="User gender")
     avatar_text = Column(String, nullable=True, comment="씁쓸한 로맨스, 슬픈 코미디 같은 문구")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -45,6 +51,26 @@ class User(Base):
     flavor_stats = relationship("FlavorStat", back_populates="user", cascade="all, delete-orphan")
     inventory = relationship("ThemeInventory", back_populates="user", cascade="all, delete-orphan")
     history = relationship("QuestionHistory", back_populates="user", cascade="all, delete-orphan")
+    auth_accounts = relationship("UserAuth", back_populates="user", cascade="all, delete-orphan")
+
+
+class UserAuth(Base):
+    """Social auth accounts"""
+    __tablename__ = "user_auth"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    provider = Column(String, nullable=False)
+    provider_user_id = Column(String, nullable=False)
+    email = Column(String, nullable=True)
+    connected_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="auth_accounts")
+
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_user_id", name="uq_user_auth_provider_user"),
+        Index("ix_user_auth_provider_user", "provider", "provider_user_id"),
+    )
 
 
 class Movie(Base):
@@ -57,6 +83,7 @@ class Movie(Base):
     runtime = Column(Integer, nullable=True, comment="러닝타임(분)")
     synopsis = Column(Text, nullable=True, comment="시놉시스")
     poster_url = Column(String, nullable=True)
+    avg_rating = Column(Numeric(2, 1), nullable=True, comment="Average rating (0.5 steps)")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # Relationships
@@ -97,8 +124,26 @@ class MovieTag(Base):
     )
 
 
+class TMDBReview(Base):
+    """TMDB API에서 가져온 리뷰 (ML 학습용)"""
+    __tablename__ = "tmdb_reviews"
+
+    id = Column(Integer, primary_key=True)
+    movie_id = Column(Integer, nullable=False, index=True)
+    user_id = Column(String, nullable=False, index=True)
+    rating = Column(Numeric, nullable=False)
+    comment = Column(Text, nullable=True)
+    likes_count = Column(Integer, nullable=False, server_default="0")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index('idx_tmdb_reviews_movie_created', 'movie_id', 'created_at'),
+        Index('idx_tmdb_reviews_user_created', 'user_id', 'created_at'),
+    )
+
+
 class Review(Base):
-    """감상 기록 (리뷰)"""
+    """사용자 감상 기록 (리뷰)"""
     __tablename__ = "reviews"
 
     id = Column(Integer, primary_key=True)
@@ -126,6 +171,7 @@ class Comment(Base):
 
     id = Column(Integer, primary_key=True)
     review_id = Column(Integer, ForeignKey("reviews.id", ondelete="CASCADE"), nullable=False, index=True)
+    parent_comment_id = Column(Integer, ForeignKey("comments.id", ondelete="CASCADE"), nullable=True, index=True)
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     content = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -133,6 +179,7 @@ class Comment(Base):
     # Relationships
     review = relationship("Review", back_populates="comments")
     user = relationship("User", back_populates="comments")
+    parent = relationship("Comment", remote_side=[id], backref="replies")
 
 
 class ReviewLike(Base):
@@ -211,6 +258,7 @@ class UserPreference(Base):
     preference_vector_json = Column(JSONB, nullable=False, default=dict, comment="emotion_scores, narrative_traits, ending_preference")
     persona_code = Column(String, nullable=True, comment="사용자 페르소나 코드")
     boost_tags = Column(JSONB, nullable=False, default=list, comment="좋아하는 태그 리스트")
+    dislike_tags = Column(JSONB, nullable=False, default=list, comment="제외/비선호 태그 리스트")
     penalty_tags = Column(JSONB, nullable=False, default=list, comment="싫어하는 태그 리스트")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -223,7 +271,10 @@ class MovieVector(Base):
     movie_id = Column(Integer, ForeignKey("movies.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
     emotion_scores = Column(JSONB, nullable=False, default=dict, comment="감정 태그 점수")
     narrative_traits = Column(JSONB, nullable=False, default=dict, comment="서사 특성 점수")
+    direction_mood = Column(JSONB, nullable=False, default=dict, comment="연출/분위기 점수")
+    character_relationship = Column(JSONB, nullable=False, default=dict, comment="캐릭터 관계 점수")
     ending_preference = Column(JSONB, nullable=False, default=dict, comment="결말 선호도")
+    embedding_text = Column(Text, nullable=True, comment="임베딩 생성용 텍스트")
     embedding_vector = Column(JSONB, nullable=True, default=list, comment="임베딩 벡터 (향후 벡터 검색용)")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

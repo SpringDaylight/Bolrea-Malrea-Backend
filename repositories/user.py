@@ -17,6 +17,18 @@ class UserRepository(BaseRepository[User]):
     def get_by_name(self, name: str) -> Optional[User]:
         """Get user by name"""
         return self.db.query(User).filter(User.name == name).first()
+
+    def get_by_user_id(self, user_id: str) -> Optional[User]:
+        """Get user by login ID"""
+        return self.db.query(User).filter(User.user_id == user_id).first()
+
+    def get_by_email(self, email: str) -> Optional[User]:
+        """Get user by email"""
+        return self.db.query(User).filter(User.email == email).first()
+
+    def get_by_nickname(self, nickname: str) -> Optional[User]:
+        """Get user by nickname"""
+        return self.db.query(User).filter(User.nickname == nickname).first()
     
     def get_taste_analysis(self, user_id: str) -> Optional[TasteAnalysis]:
         """Get user's taste analysis"""

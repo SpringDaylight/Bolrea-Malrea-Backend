@@ -8,9 +8,10 @@ from sqlalchemy.orm import Session
 from db import get_db
 from schemas import (
     ReviewResponse, ReviewListResponse, ReviewCreate, ReviewUpdate,
-    CommentResponse, CommentCreate, MessageResponse
+    CommentResponse, CommentCreate, CommentUpdate, MessageResponse
 )
 from repositories.review import ReviewRepository
+from repositories.movie import MovieRepository
 
 router = APIRouter(prefix="/api/reviews", tags=["reviews"])
 
@@ -58,6 +59,7 @@ def create_review(
     review_data["user_id"] = user_id
     
     db_review = repo.create(review_data)
+    MovieRepository(db).recalc_avg_rating(db_review.movie_id)
     
     return ReviewResponse(
         id=db_review.id,
@@ -86,6 +88,7 @@ def update_review(
     if not db_review:
         raise HTTPException(status_code=404, detail="Review not found")
     
+    MovieRepository(db).recalc_avg_rating(db_review.movie_id)
     result = repo.get_with_counts(review_id)
     
     return ReviewResponse(
@@ -105,8 +108,12 @@ def delete_review(review_id: int, db: Session = Depends(get_db)):
     """Delete a review"""
     repo = ReviewRepository(db)
     
-    if not repo.delete(review_id):
+    review = repo.get(review_id)
+    if not review:
         raise HTTPException(status_code=404, detail="Review not found")
+
+    repo.delete(review_id)
+    MovieRepository(db).recalc_avg_rating(review.movie_id)
     
     return MessageResponse(message="Review deleted successfully")
 
@@ -151,6 +158,7 @@ def get_comments(
         CommentResponse(
             id=comment.id,
             review_id=comment.review_id,
+            parent_comment_id=comment.parent_comment_id,
             user_id=comment.user_id,
             content=comment.content,
             created_at=comment.created_at
@@ -172,13 +180,62 @@ def create_comment(
     # Check if review exists
     if not repo.get(review_id):
         raise HTTPException(status_code=404, detail="Review not found")
+
+    if comment.parent_comment_id is not None:
+        parent = repo.get_comment(comment.parent_comment_id)
+        if not parent or parent.review_id != review_id:
+            raise HTTPException(status_code=400, detail="Invalid parent comment")
     
-    db_comment = repo.add_comment(review_id, user_id, comment.content)
+    db_comment = repo.add_comment(
+        review_id,
+        user_id,
+        comment.content,
+        parent_comment_id=comment.parent_comment_id,
+    )
     
     return CommentResponse(
         id=db_comment.id,
         review_id=db_comment.review_id,
+        parent_comment_id=db_comment.parent_comment_id,
         user_id=db_comment.user_id,
         content=db_comment.content,
         created_at=db_comment.created_at
     )
+
+
+@router.put("/comments/{comment_id}", response_model=CommentResponse)
+def update_comment(
+    comment_id: int,
+    payload: CommentUpdate,
+    db: Session = Depends(get_db)
+):
+    """Update comment content"""
+    repo = ReviewRepository(db)
+    db_comment = repo.update_comment(comment_id, payload.content)
+
+    if not db_comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    return CommentResponse(
+        id=db_comment.id,
+        review_id=db_comment.review_id,
+        parent_comment_id=db_comment.parent_comment_id,
+        user_id=db_comment.user_id,
+        content=db_comment.content,
+        created_at=db_comment.created_at
+    )
+
+
+@router.delete("/comments/{comment_id}", response_model=MessageResponse)
+def delete_comment(
+    comment_id: int,
+    db: Session = Depends(get_db)
+):
+    """Delete a comment"""
+    repo = ReviewRepository(db)
+    deleted = repo.delete_comment(comment_id)
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    return MessageResponse(message="Comment deleted successfully")

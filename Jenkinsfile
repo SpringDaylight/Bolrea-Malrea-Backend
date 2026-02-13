@@ -2,33 +2,30 @@ pipeline {
   agent {
     kubernetes {
       yaml """
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: kaniko
-    image: gcr.io/kaniko-project/executor:latest
-    command:
-    - cat
-    tty: true
-    volumeMounts:
-    - name: kaniko-secret
-      mountPath: /kaniko/.docker
-  volumes:
-  - name: kaniko-secret
-    secret:
-      secretName: regcred
-"""
+  apiVersion: v1
+  kind: Pod
+  spec:
+    serviceAccountName: jenkins
+    containers:
+    - name: kaniko
+      image: gcr.io/kaniko-project/executor:debug
+      command:
+      - /busybox/sh
+      - -c
+      - sleep 3600
+      tty: true
+  """
     }
   }
+
 
   environment {
     AWS_ACCOUNT_ID = "416963226971"
     AWS_REGION = "ap-northeast-2"
     ECR_REPO = "bolrea-malrea-backend"
-    GITOPS_REPO = "https://github.com/SpringDaylight/Bolrea-Malrea-Gitops.git"
     GIT_USER_NAME = "jenkins-bot"
     GIT_USER_EMAIL = "jenkins@bolrea.dev"
+    GITOPS_REPO_URL = "github.com/SpringDaylight/Bolrea-Malrea-Gitops.git"
   }
 
   stages {
@@ -47,6 +44,8 @@ spec:
           } else {
             error("Unsupported branch: ${env.BRANCH_NAME}")
           }
+          echo "ENV_NAME=${env.ENV_NAME}"
+          echo "IMAGE_TAG=${env.IMAGE_TAG}"
         }
       }
     }
@@ -57,8 +56,9 @@ spec:
           sh """
             /kaniko/executor \
               --dockerfile=Dockerfile \
-              --context=${pwd()} \
-              --destination=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:${IMAGE_TAG}
+              --context=. \
+              --destination=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:${IMAGE_TAG} \
+              --verbosity=info
           """
         }
       }
@@ -69,7 +69,7 @@ spec:
         withCredentials([string(credentialsId: 'github-token', variable: 'GITHUB_TOKEN')]) {
           sh """
             rm -rf gitops
-            git clone https://${GITHUB_TOKEN}@${GITOPS_REPO#https://} gitops
+            git clone https://${GITHUB_TOKEN}@${GITOPS_REPO_URL} gitops
             cd gitops
 
             git config user.name "${GIT_USER_NAME}"
@@ -79,7 +79,11 @@ spec:
               ${GITOPS_PATH}/patch-deployment.yaml
 
             git add ${GITOPS_PATH}/patch-deployment.yaml
-            git commit -m "ci(${ENV_NAME}): update backend image to ${IMAGE_TAG}"
+
+            # 변경 없으면 commit 실패 방지
+            git diff --cached --quiet || \
+              git commit -m "ci(${ENV_NAME}): update backend image to ${IMAGE_TAG}"
+
             git push origin main
           """
         }

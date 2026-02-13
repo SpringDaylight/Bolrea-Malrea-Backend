@@ -103,6 +103,7 @@ def get_movie(movie_id: int, db: Session = Depends(get_db)):
 @router.get("/{movie_id}/reviews", response_model=ReviewListResponse)
 def get_movie_reviews(
     movie_id: int,
+    user_id: Optional[str] = Query(None, description="User ID"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db)
@@ -116,8 +117,8 @@ def get_movie_reviews(
     review_repo = ReviewRepository(db)
     skip = (page - 1) * page_size
     
-    reviews = review_repo.get_by_movie(movie_id, skip=skip, limit=page_size)
-    total = review_repo.count(filters={"movie_id": movie_id})
+    reviews = review_repo.get_by_movie(movie_id, skip=skip, limit=page_size, viewer_user_id=user_id)
+    total = review_repo.count_by_movie(movie_id, viewer_user_id=user_id)
     
     review_responses = []
     for review in reviews:
@@ -131,8 +132,10 @@ def get_movie_reviews(
                 movie_id=review_obj.movie_id,
                 rating=review_obj.rating,
                 content=review_obj.content,
+                is_public=review_obj.is_public,
                 created_at=review_obj.created_at,
                 likes_count=result["likes_count"],
+                dislikes_count=result["dislikes_count"],
                 comments_count=result["comments_count"]
             )
         )

@@ -135,14 +135,16 @@ def get_user_reviews(
     review_responses = []
     for review in reviews:
         result = repo.get_with_counts(review.id)
+        review_obj = result["review"]
         review_responses.append(
             ReviewResponse(
-                id=review.id,
-                user_id=review.user_id,
-                movie_id=review.movie_id,
-                rating=review.rating,
-                content=review.content,
-                created_at=review.created_at,
+                id=review_obj.id,
+                user_id=review_obj.user_id,
+                user_nickname=review_obj.user.nickname if review_obj.user else None,
+                movie_id=review_obj.movie_id,
+                rating=review_obj.rating,
+                content=review_obj.content,
+                created_at=review_obj.created_at,
                 likes_count=result["likes_count"],
                 comments_count=result["comments_count"]
             )

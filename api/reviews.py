@@ -29,6 +29,7 @@ def get_review(review_id: int, db: Session = Depends(get_db)):
     return ReviewResponse(
         id=review.id,
         user_id=review.user_id,
+        user_nickname=review.user.nickname if review.user else None,
         movie_id=review.movie_id,
         rating=review.rating,
         content=review.content,
@@ -61,9 +62,13 @@ def create_review(
     db_review = repo.create(review_data)
     MovieRepository(db).recalc_avg_rating(db_review.movie_id)
     
+    # Refresh to get user relationship
+    db.refresh(db_review)
+    
     return ReviewResponse(
         id=db_review.id,
         user_id=db_review.user_id,
+        user_nickname=db_review.user.nickname if db_review.user else None,
         movie_id=db_review.movie_id,
         rating=db_review.rating,
         content=db_review.content,
@@ -91,13 +96,15 @@ def update_review(
     MovieRepository(db).recalc_avg_rating(db_review.movie_id)
     result = repo.get_with_counts(review_id)
     
+    review_obj = result["review"]
     return ReviewResponse(
-        id=db_review.id,
-        user_id=db_review.user_id,
-        movie_id=db_review.movie_id,
-        rating=db_review.rating,
-        content=db_review.content,
-        created_at=db_review.created_at,
+        id=review_obj.id,
+        user_id=review_obj.user_id,
+        user_nickname=review_obj.user.nickname if review_obj.user else None,
+        movie_id=review_obj.movie_id,
+        rating=review_obj.rating,
+        content=review_obj.content,
+        created_at=review_obj.created_at,
         likes_count=result["likes_count"],
         comments_count=result["comments_count"]
     )
@@ -160,6 +167,7 @@ def get_comments(
             review_id=comment.review_id,
             parent_comment_id=comment.parent_comment_id,
             user_id=comment.user_id,
+            user_nickname=comment.user.nickname if comment.user else None,
             content=comment.content,
             created_at=comment.created_at
         )
@@ -193,11 +201,15 @@ def create_comment(
         parent_comment_id=comment.parent_comment_id,
     )
     
+    # Refresh to get user relationship
+    db.refresh(db_comment)
+    
     return CommentResponse(
         id=db_comment.id,
         review_id=db_comment.review_id,
         parent_comment_id=db_comment.parent_comment_id,
         user_id=db_comment.user_id,
+        user_nickname=db_comment.user.nickname if db_comment.user else None,
         content=db_comment.content,
         created_at=db_comment.created_at
     )
@@ -216,11 +228,15 @@ def update_comment(
     if not db_comment:
         raise HTTPException(status_code=404, detail="Comment not found")
 
+    # Refresh to get user relationship
+    db.refresh(db_comment)
+
     return CommentResponse(
         id=db_comment.id,
         review_id=db_comment.review_id,
         parent_comment_id=db_comment.parent_comment_id,
         user_id=db_comment.user_id,
+        user_nickname=db_comment.user.nickname if db_comment.user else None,
         content=db_comment.content,
         created_at=db_comment.created_at
     )

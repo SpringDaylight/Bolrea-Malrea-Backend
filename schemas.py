@@ -122,6 +122,7 @@ class ReviewUpdate(BaseSchema):
 class ReviewResponse(ReviewBase):
     id: int
     user_id: str
+    user_nickname: Optional[str] = None
     movie_id: int
     created_at: datetime
     likes_count: int = 0
@@ -156,6 +157,7 @@ class CommentResponse(CommentBase):
     review_id: int
     parent_comment_id: Optional[int] = None
     user_id: str
+    user_nickname: Optional[str] = None
     created_at: datetime
 
 

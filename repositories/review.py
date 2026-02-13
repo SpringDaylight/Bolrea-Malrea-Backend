@@ -5,7 +5,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 
-from models import Review, ReviewLike, Comment
+from models import Review, ReviewLike, Comment, User
 from repositories.base import BaseRepository
 
 
@@ -16,9 +16,10 @@ class ReviewRepository(BaseRepository[Review]):
         super().__init__(Review, db)
     
     def get_by_movie(self, movie_id: int, skip: int = 0, limit: int = 20) -> List[Review]:
-        """Get reviews for a movie"""
+        """Get reviews for a movie with user info"""
         return (
             self.db.query(Review)
+            .options(joinedload(Review.user))
             .filter(Review.movie_id == movie_id)
             .order_by(Review.created_at.desc())
             .offset(skip)
@@ -27,14 +28,24 @@ class ReviewRepository(BaseRepository[Review]):
         )
     
     def get_by_user(self, user_id: str, skip: int = 0, limit: int = 20) -> List[Review]:
-        """Get reviews by a user"""
+        """Get reviews by a user with user info"""
         return (
             self.db.query(Review)
+            .options(joinedload(Review.user))
             .filter(Review.user_id == user_id)
             .order_by(Review.created_at.desc())
             .offset(skip)
             .limit(limit)
             .all()
+        )
+    
+    def get_with_user(self, review_id: int) -> Optional[Review]:
+        """Get review with user info"""
+        return (
+            self.db.query(Review)
+            .options(joinedload(Review.user))
+            .filter(Review.id == review_id)
+            .first()
         )
     
     def get_user_review_for_movie(self, user_id: str, movie_id: int) -> Optional[Review]:
@@ -46,8 +57,8 @@ class ReviewRepository(BaseRepository[Review]):
         )
     
     def get_with_counts(self, review_id: int) -> Optional[dict]:
-        """Get review with like and comment counts"""
-        review = self.get(review_id)
+        """Get review with like and comment counts and user info"""
+        review = self.get_with_user(review_id)
         if not review:
             return None
         
@@ -139,9 +150,10 @@ class ReviewRepository(BaseRepository[Review]):
         return True
     
     def get_comments(self, review_id: int, skip: int = 0, limit: int = 50) -> List[Comment]:
-        """Get comments for a review"""
+        """Get comments for a review with user info"""
         return (
             self.db.query(Comment)
+            .options(joinedload(Comment.user))
             .filter(Comment.review_id == review_id)
             .order_by(Comment.created_at.asc())
             .offset(skip)

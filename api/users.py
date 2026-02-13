@@ -48,7 +48,7 @@ def get_current_user(
 
 @router.get("/search", response_model=UserSearchResponse)
 def search_users(
-    query: str = Query(..., min_length=1, description="Search by user_id, nickname, or email"),
+    query: str = Query(..., min_length=1, description="Search by user_id or nickname"),
     limit: int = Query(20, ge=1, le=50),
     db: Session = Depends(get_db)
 ):

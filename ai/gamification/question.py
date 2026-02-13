@@ -8,6 +8,7 @@ from models import QuestionHistory
 
 START_QUESTIONS_FILE = "start_questions.json"
 DAILY_QUESTIONS_FILE = "daily_questions.json"
+REVIEW_REWARD_TRACKING_QUESTION = "__review_reward_tracking__"
 
 class DailyQuestionMixin:
 
@@ -102,7 +103,10 @@ class DailyQuestionMixin:
 
     def get_question_history(self) -> List[Dict]:
         """질문/답변 히스토리 반환"""
-        # Core의 get_user_data에서 이미 변환해서 주므로 그대로 반환해도 됨
-        # 또는 직접 DB 조회해도 됨. 
-        # 여기서는 get_user_data()가 이미 history 리스트를 포함하므로 재사용
-        return self.get_user_data().get("question_history", [])
+        # Legacy: return all history entries without filtering
+        # return self.get_user_data().get("question_history", [])
+        history = self.get_user_data().get("question_history", [])
+        return [
+            item for item in history
+            if item.get("question") != REVIEW_REWARD_TRACKING_QUESTION
+        ]

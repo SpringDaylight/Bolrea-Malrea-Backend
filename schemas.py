@@ -108,6 +108,7 @@ class MovieListResponse(BaseSchema):
 class ReviewBase(BaseSchema):
     rating: Decimal = Field(..., ge=0.5, le=5.0, description="0.5~5.0, 0.5 단위")
     content: Optional[str] = None
+    is_public: bool = True
 
 
 class ReviewCreate(ReviewBase):
@@ -117,6 +118,7 @@ class ReviewCreate(ReviewBase):
 class ReviewUpdate(BaseSchema):
     rating: Optional[Decimal] = Field(None, ge=0.5, le=5.0)
     content: Optional[str] = None
+    is_public: Optional[bool] = None
 
 
 class ReviewResponse(ReviewBase):
@@ -126,6 +128,7 @@ class ReviewResponse(ReviewBase):
     movie_id: int
     created_at: datetime
     likes_count: int = 0
+    dislikes_count: int = 0
     comments_count: int = 0
 
 
@@ -220,6 +223,13 @@ class MovieVectorResponse(BaseSchema):
 class MessageResponse(BaseSchema):
     message: str
     detail: Optional[str] = None
+
+
+class LikeToggleResponse(BaseSchema):
+    message: str
+    review_id: int
+    likes_count: int
+    dislikes_count: int
 
 
 class ErrorResponse(BaseSchema):

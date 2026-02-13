@@ -3,7 +3,7 @@ Review repository with custom queries
 """
 from typing import List, Optional
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 from models import Review, ReviewLike, Comment, User
 from repositories.base import BaseRepository
@@ -15,13 +15,27 @@ class ReviewRepository(BaseRepository[Review]):
     def __init__(self, db: Session):
         super().__init__(Review, db)
     
-    def get_by_movie(self, movie_id: int, skip: int = 0, limit: int = 20) -> List[Review]:
-        """Get reviews for a movie with user info"""
-        return (
+    def get_by_movie(
+        self,
+        movie_id: int,
+        skip: int = 0,
+        limit: int = 20,
+        viewer_user_id: Optional[str] = None
+    ) -> List[Review]:
+        """Get reviews for a movie with user info (public + viewer's private)"""
+        query = (
             self.db.query(Review)
             .options(joinedload(Review.user))
             .filter(Review.movie_id == movie_id)
-            .order_by(Review.created_at.desc())
+        )
+
+        if viewer_user_id:
+            query = query.filter(or_(Review.is_public == True, Review.user_id == viewer_user_id))
+        else:
+            query = query.filter(Review.is_public == True)
+
+        return (
+            query.order_by(Review.created_at.desc())
             .offset(skip)
             .limit(limit)
             .all()
@@ -57,17 +71,11 @@ class ReviewRepository(BaseRepository[Review]):
         )
     
     def get_with_counts(self, review_id: int) -> Optional[dict]:
-        """Get review with like and comment counts and user info"""
+        """Get review with counts and user info"""
         review = self.get_with_user(review_id)
         if not review:
             return None
-        
-        likes_count = (
-            self.db.query(func.count(ReviewLike.id))
-            .filter(ReviewLike.review_id == review_id, ReviewLike.is_like == True)
-            .scalar()
-        )
-        
+
         comments_count = (
             self.db.query(func.count(Comment.id))
             .filter(Comment.review_id == review_id)
@@ -76,30 +84,58 @@ class ReviewRepository(BaseRepository[Review]):
         
         return {
             "review": review,
-            "likes_count": likes_count,
+            "likes_count": review.likes_count,
+            "dislikes_count": review.dislikes_count,
             "comments_count": comments_count
         }
+
+    def count_by_movie(self, movie_id: int, viewer_user_id: Optional[str] = None) -> int:
+        """Count reviews for a movie with visibility rules"""
+        query = self.db.query(func.count(Review.id)).filter(Review.movie_id == movie_id)
+        if viewer_user_id:
+            query = query.filter(or_(Review.is_public == True, Review.user_id == viewer_user_id))
+        else:
+            query = query.filter(Review.is_public == True)
+        return query.scalar()
     
     def toggle_like(self, review_id: int, user_id: str, is_like: bool = True) -> bool:
-        """Toggle like/dislike on a review"""
+        """Toggle like/dislike on a review and update counters"""
+        review = self.db.query(Review).filter(Review.id == review_id).first()
+        if not review:
+            return False
+
         existing_like = (
             self.db.query(ReviewLike)
             .filter(ReviewLike.review_id == review_id, ReviewLike.user_id == user_id)
             .first()
         )
-        
+
         if existing_like:
             if existing_like.is_like == is_like:
-                # Remove like if same action
+                # Remove reaction if same action
                 self.db.delete(existing_like)
+                if is_like:
+                    review.likes_count = max(0, review.likes_count - 1)
+                else:
+                    review.dislikes_count = max(0, review.dislikes_count - 1)
             else:
-                # Update to opposite action
+                # Switch reaction
+                if existing_like.is_like:
+                    review.likes_count = max(0, review.likes_count - 1)
+                    review.dislikes_count += 1
+                else:
+                    review.dislikes_count = max(0, review.dislikes_count - 1)
+                    review.likes_count += 1
                 existing_like.is_like = is_like
         else:
-            # Create new like
+            # Create new reaction
             new_like = ReviewLike(review_id=review_id, user_id=user_id, is_like=is_like)
             self.db.add(new_like)
-        
+            if is_like:
+                review.likes_count += 1
+            else:
+                review.dislikes_count += 1
+
         self.db.commit()
         return True
     

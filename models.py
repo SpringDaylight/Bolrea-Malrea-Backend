@@ -151,6 +151,9 @@ class Review(Base):
     movie_id = Column(Integer, ForeignKey("movies.id", ondelete="CASCADE"), nullable=False, index=True)
     rating = Column(Numeric(2, 1), nullable=False, comment="0.5~5.0, 0.5 단위")
     content = Column(Text, nullable=True)
+    is_public = Column(Boolean, nullable=False, default=True, comment="True=공개, False=비공개")
+    likes_count = Column(Integer, nullable=False, default=0, comment="좋아요 총합 캐시")
+    dislikes_count = Column(Integer, nullable=False, default=0, comment="싫어요 총합 캐시")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # Relationships

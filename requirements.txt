@@ -8,3 +8,4 @@ boto3
 python-dotenv
 requests
 passlib[argon2,bcrypt]
+numpy==1.26.4

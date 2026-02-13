@@ -124,8 +124,26 @@ class MovieTag(Base):
     )
 
 
+class TMDBReview(Base):
+    """TMDB API에서 가져온 리뷰 (ML 학습용)"""
+    __tablename__ = "tmdb_reviews"
+
+    id = Column(Integer, primary_key=True)
+    movie_id = Column(Integer, nullable=False, index=True)
+    user_id = Column(String, nullable=False, index=True)
+    rating = Column(Numeric, nullable=False)
+    comment = Column(Text, nullable=True)
+    likes_count = Column(Integer, nullable=False, server_default="0")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index('idx_tmdb_reviews_movie_created', 'movie_id', 'created_at'),
+        Index('idx_tmdb_reviews_user_created', 'user_id', 'created_at'),
+    )
+
+
 class Review(Base):
-    """감상 기록 (리뷰)"""
+    """사용자 감상 기록 (리뷰)"""
     __tablename__ = "reviews"
 
     id = Column(Integer, primary_key=True)

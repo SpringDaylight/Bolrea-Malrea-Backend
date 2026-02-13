@@ -46,6 +46,17 @@ class UserResponse(UserBase):
     created_at: datetime
 
 
+class UserSearchItem(BaseSchema):
+    id: str
+    user_id: Optional[str] = None
+    nickname: Optional[str] = None
+    avatar_text: Optional[str] = None
+
+
+class UserSearchResponse(BaseSchema):
+    users: List[UserSearchItem]
+
+
 class UserSignupRequest(BaseSchema):
     user_id: str
     name: str

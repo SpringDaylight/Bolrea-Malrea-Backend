@@ -32,7 +32,7 @@ class UserRepository(BaseRepository[User]):
         return self.db.query(User).filter(User.nickname == nickname).first()
 
     def search(self, query: str, limit: int = 20) -> list[User]:
-        """Search users by user_id or nickname"""
+        """Search users by name, user_id or nickname"""
         if not query:
             return []
         pattern = f"%{query}%"
@@ -40,6 +40,7 @@ class UserRepository(BaseRepository[User]):
             self.db.query(User)
             .filter(
                 or_(
+                    User.name.ilike(pattern),
                     User.user_id.ilike(pattern),
                     User.nickname.ilike(pattern),
                 )

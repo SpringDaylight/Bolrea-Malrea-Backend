@@ -3,6 +3,7 @@ import json
 import boto3
 from typing import Optional
 from dotenv import load_dotenv
+from utils.secrets import load_kakao_secrets
 
 # Load environment variables from .env file
 load_dotenv()
@@ -17,6 +18,12 @@ DEFAULT_WEIGHTS = {
 
 # AWS Configuration
 AWS_REGION = os.getenv("AWS_REGION", "ap-northeast-2")
+
+# Kakao OAuth Configuration
+KAKAO_SECRETS = load_kakao_secrets()
+KAKAO_CLIENT_ID = KAKAO_SECRETS["KAKAO_CLIENT_ID"]
+KAKAO_CLIENT_SECRET = KAKAO_SECRETS["KAKAO_CLIENT_SECRET"]
+KAKAO_REDIRECT_URI = KAKAO_SECRETS["KAKAO_REDIRECT_URI"]
 
 # AWS RDS Configuration
 RDS_SECRET_ARN = os.getenv(

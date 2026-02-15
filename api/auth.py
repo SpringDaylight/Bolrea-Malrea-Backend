@@ -4,11 +4,13 @@ Authentication API endpoints (Kakao OAuth)
 import os
 import requests
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 
 from db import get_db
+from config import KAKAO_CLIENT_ID, KAKAO_CLIENT_SECRET, KAKAO_REDIRECT_URI
 from schemas import UserResponse, MessageResponse, UserSignupRequest, UserLoginRequest
 from repositories.user import UserRepository
 from repositories.user_auth import UserAuthRepository
@@ -23,9 +25,16 @@ from datetime import date
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-# Kakao OAuth settings
-KAKAO_CLIENT_ID = os.getenv("KAKAO_CLIENT_ID", "")
-KAKAO_REDIRECT_URI = os.getenv("KAKAO_REDIRECT_URI", "http://localhost:5174/auth/kakao/callback")
+
+class KakaoSignupCompleteRequest(BaseModel):
+    kakao_id: str
+    provider: str
+    nickname: str
+    email: Optional[str] = None
+    birth_date: Optional[str] = None  # YYYY-MM-DD format
+    gender: Optional[str] = None
+
+# Kakao OAuth URLs
 KAKAO_AUTH_URL = "https://kauth.kakao.com/oauth/authorize"
 KAKAO_TOKEN_URL = "https://kauth.kakao.com/oauth/token"
 KAKAO_USER_INFO_URL = "https://kapi.kakao.com/v2/user/me"
@@ -52,21 +61,37 @@ def kakao_callback(
 ):
     """Handle Kakao OAuth callback"""
     
+    print(f"Kakao callback received with code: {code[:20]}...")
+    print(f"Using redirect_uri: {KAKAO_REDIRECT_URI}")
+    print(f"Using client_id: {KAKAO_CLIENT_ID}")
+    print(f"Client secret configured: {bool(KAKAO_CLIENT_SECRET)}")
+    
     # Exchange code for access token
+    token_data = {
+        "grant_type": "authorization_code",
+        "client_id": KAKAO_CLIENT_ID,
+        "redirect_uri": KAKAO_REDIRECT_URI,
+        "code": code
+    }
+    
+    # Add client_secret if configured
+    if KAKAO_CLIENT_SECRET:
+        token_data["client_secret"] = KAKAO_CLIENT_SECRET
+    
     token_response = requests.post(
         KAKAO_TOKEN_URL,
-        data={
-            "grant_type": "authorization_code",
-            "client_id": KAKAO_CLIENT_ID,
-            "redirect_uri": KAKAO_REDIRECT_URI,
-            "code": code
-        },
+        data=token_data,
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         timeout=10
     )
     
     if token_response.status_code != 200:
-        raise HTTPException(status_code=400, detail="Failed to get access token from Kakao")
+        error_detail = token_response.json() if token_response.content else {}
+        print(f"Kakao token error: {token_response.status_code}, {error_detail}")
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Failed to get access token from Kakao: {error_detail.get('error_description', error_detail)}"
+        )
     
     token_data = token_response.json()
     access_token = token_data.get("access_token")
@@ -91,37 +116,107 @@ def kakao_callback(
     provider = "kakao"
     provider_user_id = kakao_id
     nickname = profile.get("nickname", f"User{kakao_id[:6]}")
+    email = kakao_account.get("email")
     
-    # Check if user exists, create if not
+    # Check if user exists
     user_repo = UserRepository(db)
     auth_repo = UserAuthRepository(db)
 
     auth = auth_repo.get_by_provider(provider, provider_user_id)
+    
     if auth:
+        # Existing user - return user info
         user = user_repo.get(auth.user_id)
+        return {
+            "id": user.id,
+            "user_id": user.user_id,
+            "name": user.name,
+            "nickname": user.nickname,
+            "email": user.email,
+            "avatar_text": user.avatar_text,
+            "access_token": access_token,
+            "is_new_user": False
+        }
     else:
-        user = user_repo.create({
-            "id": generate_user_pk(),
+        # New user - return temporary info for signup flow
+        return {
+            "id": None,
+            "user_id": None,
             "name": nickname,
             "nickname": nickname,
-            "avatar_text": "카카오 로그인 사용자"
-        })
-        auth_repo.create({
-            "user_id": user.id,
-            "provider": provider,
-            "provider_user_id": provider_user_id,
-            "email": kakao_account.get("email")
-        })
+            "email": email,
+            "avatar_text": "카카오 로그인 사용자",
+            "access_token": access_token,
+            "is_new_user": True,
+            "kakao_id": kakao_id,  # For completing signup later
+            "provider": provider
+        }
+
+
+@router.post("/kakao/complete-signup", response_model=UserResponse, status_code=201)
+def complete_kakao_signup(payload: KakaoSignupCompleteRequest, db: Session = Depends(get_db)):
+    """Complete Kakao user signup after additional info form"""
+    user_repo = UserRepository(db)
+    auth_repo = UserAuthRepository(db)
     
-    # Return user info (in production, you'd return a JWT token here)
-    return {
-        "user_id": user.user_id,
-        "name": user.name,
-        "nickname": user.nickname,
-        "email": user.email,
-        "avatar_text": user.avatar_text,
-        "access_token": access_token  # For demo purposes
-    }
+    # Check if already registered
+    existing_auth = auth_repo.get_by_provider(payload.provider, payload.kakao_id)
+    if existing_auth:
+        raise HTTPException(status_code=400, detail="User already registered")
+    
+    # Check nickname availability
+    if user_repo.get_by_nickname(payload.nickname):
+        raise HTTPException(status_code=400, detail="Nickname already exists")
+    
+    # Parse birth_date if provided
+    birth_date_obj = None
+    if payload.birth_date:
+        try:
+            from datetime import datetime
+            birth_date_obj = datetime.strptime(payload.birth_date, "%Y-%m-%d").date()
+            
+            # Validate birth_date
+            today = date.today()
+            if birth_date_obj > today:
+                raise HTTPException(status_code=400, detail="Birth date cannot be in the future")
+            age = today.year - birth_date_obj.year - (
+                (today.month, today.day) < (birth_date_obj.month, birth_date_obj.day)
+            )
+            if age > 120:
+                raise HTTPException(status_code=400, detail="Birth date is not valid")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid birth date format. Use YYYY-MM-DD")
+    
+    # Create user
+    user = user_repo.create({
+        "id": generate_user_pk(),
+        "name": payload.nickname,
+        "nickname": payload.nickname,
+        "email": payload.email,
+        "birth_date": birth_date_obj,
+        "gender": payload.gender,
+        "avatar_text": "카카오 로그인 사용자"
+    })
+    
+    # Create auth record
+    auth_repo.create({
+        "user_id": user.id,
+        "provider": payload.provider,
+        "provider_user_id": payload.kakao_id,
+        "email": payload.email
+    })
+    
+    return UserResponse(
+        id=user.id,
+        name=user.name,
+        user_id=user.user_id,
+        nickname=user.nickname,
+        email=user.email,
+        birth_date=user.birth_date,
+        gender=user.gender,
+        avatar_text=user.avatar_text,
+        created_at=user.created_at,
+    )
 
 
 @router.post("/signup", response_model=UserResponse, status_code=201)

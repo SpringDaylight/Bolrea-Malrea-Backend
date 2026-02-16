@@ -26,6 +26,7 @@ except Exception:
 
 def to_vector(profile: Dict, e_keys: List[str], n_keys: List[str], d_keys: List[str]) -> List[float]:
     """영화 프로필을 벡터로 변환"""
+    # 감정/서사/결말 점수를 하나의 고차원 벡터로 연결
     return (
         [profile['emotion_scores'].get(k, 0.0) for k in e_keys]
         + [profile['narrative_traits'].get(k, 0.0) for k in n_keys]
@@ -51,7 +52,7 @@ def project_2d(X: List[List[float]]):
     Xn = np.array(X, dtype=float)
     n_samples = Xn.shape[0]
 
-    # Try UMAP, then random projection
+    # 1) UMAP 시도 (샘플이 충분할 때)
     try:
         if n_samples < 3:
             raise ValueError('UMAP needs at least 3 samples')
@@ -63,7 +64,7 @@ def project_2d(X: List[List[float]]):
     except Exception:
         pass
 
-    # Fallback: random projection
+    # 2) Fallback: 랜덤 프로젝션
     rng = np.random.RandomState(42)
     W = rng.normal(size=(Xn.shape[1], 2))
     coords = Xn @ W
@@ -90,11 +91,14 @@ def kmeans(X: List[List[float]], k: int = 8, iters: int = 30):
     if k > len(Xn):
         raise ValueError(f'k ({k}) must be <= number of samples ({len(Xn)})')
     
+    # 초기 중심점을 무작위로 선택
     centroids = Xn[rng.choice(len(Xn), k, replace=False)]
 
     for _ in range(iters):
+        # 1) 각 점과 중심점 거리 계산
         dists = ((Xn[:, None, :] - centroids[None, :, :]) ** 2).sum(axis=2)
         labels = dists.argmin(axis=1)
+        # 2) 라벨별 평균으로 중심점 업데이트
         new_centroids = np.vstack([
             Xn[labels == i].mean(axis=0) if (labels == i).any() else centroids[i]
             for i in range(k)
@@ -167,7 +171,7 @@ def hierarchical_clustering(
     e_keys = taxonomy['emotion']['tags']
     n_keys = taxonomy['story_flow']['tags']
     
-    # 1. 장르별 그룹핑
+    # 1) 장르별 그룹핑
     genre_groups = group_by_genre(movies, profiles)
     
     hierarchical_result = {}
@@ -195,20 +199,20 @@ def hierarchical_clustering(
             }
             continue
         
-        # 2. 감정/서사 벡터 추출 (장르 정보 제외)
+        # 2) 감정/서사 벡터 추출 (장르 정보 제외)
         emotion_narrative_vecs = [
             to_emotion_narrative_vector(profile, e_keys, n_keys)
             for movie, profile in items
         ]
         
-        # 3. 2D 투영
+        # 3) 2D 투영
         coords_2d, _ = project_2d(emotion_narrative_vecs)
         
-        # 4. K-Means 서브클러스터링
+        # 4) K-Means 서브클러스터링
         k = max(2, min(4, len(items) // 10))  # 장르당 2~4개 서브클러스터
         labels, centroids_2d = kmeans(coords_2d.tolist(), k=k)
         
-        # 5. 서브클러스터 생성
+        # 5) 서브클러스터 생성
         subclusters = {}
         for cluster_id in range(k):
             cluster_movies = [items[i][0] for i, l in enumerate(labels) if l == cluster_id]
@@ -239,7 +243,7 @@ def hierarchical_clustering(
 
 def generate_subcluster_label(profiles: List[Dict], e_keys: List[str]) -> str:
     """서브클러스터 라벨 생성 (감정 태그 기반)"""
-    # 평균 감정 점수 계산
+    # 1) 평균 감정 점수 계산
     mean_scores = {k: 0.0 for k in e_keys}
     for profile in profiles:
         for k in e_keys:
@@ -248,7 +252,7 @@ def generate_subcluster_label(profiles: List[Dict], e_keys: List[str]) -> str:
     for k in mean_scores:
         mean_scores[k] /= len(profiles)
     
-    # 상위 2개 태그 추출
+    # 2) 상위 2개 태그 추출
     sorted_tags = sorted(mean_scores.items(), key=lambda x: x[1], reverse=True)
     top_tags = [sorted_tags[0][0], sorted_tags[1][0]] if len(sorted_tags) >= 2 else [sorted_tags[0][0]]
     
@@ -306,18 +310,18 @@ def cross_genre_recommendation(
         sorted_movies = sorted(scored_movies, key=lambda x: x['score'], reverse=True)
         return sorted_movies[:limit]
     
-    # 장르별로 영화 분류
+    # 1) 장르별로 영화 분류
     genre_to_movies = defaultdict(list)
     for item in scored_movies:
         movie_genres = item.get('genres', [])
         for genre in movie_genres:
             genre_to_movies[genre].append(item)
     
-    # 각 장르별로 점수순 정렬
+    # 2) 각 장르별로 점수순 정렬
     for genre in genre_to_movies:
         genre_to_movies[genre].sort(key=lambda x: x['score'], reverse=True)
     
-    # 추천 영화 선택 (중복 방지)
+    # 3) 추천 영화 선택 (중복 방지)
     recommendations = []
     recommended_ids = set()  # 이미 추천한 영화 ID 추적
     
@@ -338,7 +342,7 @@ def cross_genre_recommendation(
         
         genre_index += 1
     
-    # 아직 limit에 도달하지 못했다면, 남은 영화 중 점수 높은 순으로 추가
+    # 4) limit 미달 시 남은 영화 중 점수 높은 순으로 추가
     if len(recommendations) < limit:
         remaining_movies = [
             m for m in scored_movies 

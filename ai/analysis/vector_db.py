@@ -44,11 +44,11 @@ class LocalVectorDB:
         
         import numpy as np
         
-        # 벡터를 numpy 배열로 변환
+        # 1) 벡터를 numpy 배열로 변환
         db_vecs = np.array(self.vectors, dtype=float)
         q_vec = np.array(query_vector, dtype=float)
         
-        # 코사인 유사도 계산
+        # 2) 코사인 유사도 계산 준비 (벡터 정규화)
         # cosine_sim = dot(A, B) / (norm(A) * norm(B))
         norms = np.linalg.norm(db_vecs, axis=1, keepdims=True)
         norms = np.where(norms == 0, 1, norms)  # 0으로 나누기 방지
@@ -59,9 +59,10 @@ class LocalVectorDB:
             q_norm = 1
         normalized_q = q_vec / q_norm
         
+        # 3) 유사도 벡터 계산
         similarities = normalized_vecs @ normalized_q
         
-        # 필터 적용
+        # 4) 필터 적용 (장르/연도 등 메타데이터 기반)
         if filters:
             mask = np.ones(len(self.metadata), dtype=bool)
             
@@ -82,10 +83,10 @@ class LocalVectorDB:
                         if year > filters['year_to']:
                             mask[i] = False
             
-            # 마스크 적용
+            # 마스크 적용 (필터 통과 못하면 -inf)
             similarities = np.where(mask, similarities, -np.inf)
         
-        # 상위 k개 선택
+        # 5) 상위 k개 선택
         top_k_idx = np.argsort(similarities)[::-1][:k]
         
         results = []
@@ -138,7 +139,7 @@ def profile_to_vector(profile: Dict, e_keys: List[str], n_keys: List[str]) -> Li
     for k in n_keys:
         vec.append(profile.get('narrative_traits', {}).get(k, 0.0))
     
-    # Ending preference
+    # Ending preference (3개 고정 차원)
     vec.append(profile.get('ending_preference', {}).get('happy', 0.0))
     vec.append(profile.get('ending_preference', {}).get('open', 0.0))
     vec.append(profile.get('ending_preference', {}).get('bittersweet', 0.0))
@@ -159,12 +160,13 @@ def build_vector_db(movies: List[Dict], profiles: List[Dict], e_keys: List[str],
     Returns:
         LocalVectorDB 인스턴스
     """
+    # 로컬 메모리 DB 생성
     db = LocalVectorDB()
     
     for movie, profile in zip(movies, profiles):
         vector = profile_to_vector(profile, e_keys, n_keys)
         
-        # 메타데이터 저장
+        # 메타데이터 저장 (검색 결과에 함께 반환)
         metadata = {
             'id': movie.get('id'),
             'title': movie.get('title'),

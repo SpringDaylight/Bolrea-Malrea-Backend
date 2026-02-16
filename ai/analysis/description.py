@@ -57,7 +57,7 @@ def generate_explanation(
         # Fallback: 간단한 템플릿 기반 설명
         return _generate_fallback_explanation(prediction_result, movie_title)
     
-    # LLM 프롬프트 생성
+    # 1) LLM 프롬프트 생성
     prompt = _build_explanation_prompt(
         prediction_result,
         movie_title,
@@ -65,7 +65,7 @@ def generate_explanation(
         user_disliked_tags
     )
     
-    # Bedrock Claude 호출
+    # 2) Bedrock Claude 호출 → 텍스트 응답 추출
     try:
         model_id = "anthropic.claude-3-haiku-20240307-v1:0"
         
@@ -118,7 +118,7 @@ def _build_explanation_prompt(
     dislike_penalty = breakdown.get("dislike_penalty", 0)
     top_factors = breakdown.get("top_factors", [])
     
-    # 사용자 취향 정보
+    # 사용자 취향 정보 (있을 때만 포함)
     liked_str = ""
     if user_liked_tags and len(user_liked_tags) > 0:
         liked_str = f"좋아하는 태그: {', '.join(user_liked_tags[:5])}"
@@ -127,7 +127,7 @@ def _build_explanation_prompt(
     if user_disliked_tags and len(user_disliked_tags) > 0:
         disliked_str = f"싫어하는 태그: {', '.join(user_disliked_tags[:5])}"
     
-    # 30% 이하는 퍼센트를 언급하지 않음
+    # 30% 이하는 퍼센트를 언급하지 않음 (부정적 추천 시)
     if prob <= 30:
         prompt = f"""다음 정보를 바탕으로 왜 이 영화가 사용자의 취향과 맞지 않는지 2-3줄로 친근하게 설명해주세요.
 

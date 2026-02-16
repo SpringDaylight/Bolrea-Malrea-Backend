@@ -32,6 +32,7 @@ def load_taxonomy(path: str = None):
         # 기본 경로: .../data/emotion_tag.json
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         path = os.path.join(base_dir, 'data', 'emotion_tag.json')
+    # JSON 파일 로드 후 반환
     return load_json(path)
 
 # 정서 태그 값으로 더미 값 입력(fallback 용도로 유지)
@@ -192,6 +193,7 @@ def analyze_with_llm(text: str, taxonomy: Dict, bedrock_client=None) -> Dict:
                 except (ValueError, TypeError):
                     return 0.0
 
+            # 결과 구조 초기화
             result = {
                 'emotion': {},
                 'story_flow': {},
@@ -215,7 +217,7 @@ def analyze_with_llm(text: str, taxonomy: Dict, bedrock_client=None) -> Dict:
                     if tag in valid_tags:
                         result[cat][tag] = _validate_score(score)
             
-            # Ending preference 처리
+            # Ending preference 처리 (happy/open/bittersweet 필수)
             ending_pref = llm_result.get('ending_preference', {})
             for key in ['happy', 'open', 'bittersweet']:
                 result['ending_preference'][key] = _validate_score(ending_pref.get(key, 0.5))
@@ -236,6 +238,7 @@ def score_tags(text: str, tags: List[str]) -> Dict[str, float]:
 
 # 텍스트 추출
 def movie_text(movie: Dict) -> str:
+    # 영화 메타데이터에서 텍스트 필드를 추출해 하나의 문장으로 결합
     parts = []
     for key in ['title', 'overview']:
         if movie.get(key):
@@ -250,10 +253,10 @@ def movie_text(movie: Dict) -> str:
 def build_profile(movie: Dict, taxonomy: Dict, bedrock_client=None) -> Dict:
     text = movie_text(movie)
     
-    # LLM을 사용하여 정서 태그 분석
+    # 1) LLM을 사용하여 정서 태그 분석 (가능한 경우)
     llm_analysis = analyze_with_llm(text, taxonomy, bedrock_client)
     
-    # LLM 분석 성공 시
+    # 2) LLM 분석 성공 시: LLM 결과를 프로필 스키마로 변환
     if llm_analysis is not None:
         profile = {
             'movie_id': movie.get('id'),
@@ -265,7 +268,7 @@ def build_profile(movie: Dict, taxonomy: Dict, bedrock_client=None) -> Dict:
             'ending_preference': llm_analysis['ending_preference'],
         }
     else:
-        # Fallback: 기존 stable_score 사용
+        # 3) Fallback: 기존 stable_score 사용 (LLM 실패 시)
         print(f"LLM 분석 실패, fallback 모드로 {movie.get('title')} 처리")
         
         # 안전한 접근
@@ -289,7 +292,7 @@ def build_profile(movie: Dict, taxonomy: Dict, bedrock_client=None) -> Dict:
             },
         }
     
-    # 임베딩 텍스트 생성 및 벡터 추가
+    # 4) 임베딩 텍스트 생성 및 벡터 추가
     emb_txt = embedding_text(profile)
     vector = embedding_vector(emb_txt, bedrock_client)
     profile['embedding'] = vector

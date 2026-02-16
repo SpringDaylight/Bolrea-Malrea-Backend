@@ -38,6 +38,7 @@ def sigmoid(x: float, k: float = 8.0, x0: float = 0.5) -> float:
 
 # 딕셔너리를 정렬된 벡터로 변환
 def align_vector(d: Dict[str, float], keys: List[str]) -> List[float]:
+    # 딕셔너리를 고정된 키 순서 벡터로 변환 (코사인 유사도 입력용)
     return [d.get(k, 0.0) for k in keys]
 
 
@@ -185,7 +186,7 @@ def calculate_satisfaction_probability(
     # 3. 싫어하는 것 페널티 계산
     dislike_penalty = _calculate_dislike_penalty(movie_profile, dislikes)
     
-    # 4. 가중치 적용
+    # 4. 가중치 적용 (감정/서사/결말 비중)
     w_e = weights.get("emotion", 0.5)
     w_n = weights.get("narrative", 0.3)
     w_d = weights.get("ending", 0.2)
@@ -200,7 +201,7 @@ def calculate_satisfaction_probability(
     probability = (raw_score + 1) / 2
     probability = max(0.0, min(1.0, probability))  # 0~1 범위로 클립
     
-    # 7. 신뢰도 계산 (차원 간 일관성)
+    # 7. 신뢰도 계산 (차원 간 일관성: 표준편차가 낮을수록 신뢰도 높음)
     import numpy as np
     std_dev = np.std([sim_e, sim_n, sim_d])
     confidence = 1 - min(std_dev, 1.0)  # 분산이 낮을수록 신뢰도 높음

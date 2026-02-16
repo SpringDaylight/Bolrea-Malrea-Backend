@@ -19,6 +19,7 @@ def extract_tags_from_movie(movie_profile: Dict) -> List[str]:
     Returns:
         태그 리스트 (점수 0.5 이상만 추출)
     """
+    # 높은 점수의 태그만 추출해 사용자의 선호 태그 후보로 사용
     tags = []
     
     # 모든 카테고리에서 높은 점수의 태그 추출
@@ -56,20 +57,20 @@ def build_user_preference_from_movies(
             "penalty_tags": [...] # 싫어하는 영화에서 추출된 태그
         }
     """
-    # 영화 ID → 영화 객체 매핑
+    # 1) 영화 ID → 영화 객체 매핑
     movie_map = {m['id']: m for m in movies_data}
     
     boost_tags = []
     penalty_tags = []
     
-    # 좋아하는 영화에서 태그 추출
+    # 2) 좋아하는 영화에서 태그 추출 (boost)
     print(f"\n📌 좋아하는 영화 분석 중...")
     for movie_id in liked_movie_ids:
         if movie_id in movie_map:
             movie = movie_map[movie_id]
             print(f"  ✓ {movie.get('title')}")
             
-            # 영화 프로필 생성
+            # 영화 프로필 생성 (LLM 가능하면 LLM 사용)
             profile = embedding.build_profile(movie, taxonomy, bedrock_client)
             
             # 세부 태그 추출
@@ -77,7 +78,7 @@ def build_user_preference_from_movies(
             boost_tags.extend(tags)
             print(f"    추출된 태그: {tags[:5]}...")  # 일부만 출력
     
-    # 싫어하는 영화에서 태그 추출
+    # 3) 싫어하는 영화에서 태그 추출 (penalty)
     print(f"\n📌 싫어하는 영화 분석 중...")
     for movie_id in disliked_movie_ids:
         if movie_id in movie_map:
@@ -92,13 +93,13 @@ def build_user_preference_from_movies(
             penalty_tags.extend(tags)
             print(f"    추출된 태그: {tags[:5]}...")  # 일부만 출력
     
-    # 중복 제거 및 빈도 기반 필터링
+    # 4) 중복 제거 및 빈도 기반 필터링
     from collections import Counter
     
     boost_counter = Counter(boost_tags)
     penalty_counter = Counter(penalty_tags)
     
-    # 최소 2번 이상 등장한 태그만 유지 (노이즈 제거)
+    # 최소 N번 이상 등장한 태그만 유지 (노이즈 제거)
     filtered_boost = [tag for tag, count in boost_counter.items() if count >= 1]
     filtered_penalty = [tag for tag, count in penalty_counter.items() if count >= 1]
     

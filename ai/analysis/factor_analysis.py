@@ -35,7 +35,7 @@ def find_top_contributors(
     """
     contributors = []
     
-    # Emotion scores 비교
+    # Emotion scores 비교 (감정 태그 간 기여도 계산)
     for tag in user_profile.get('emotion_scores', {}):
         user_score = user_profile['emotion_scores'].get(tag, 0.0)
         movie_score = movie_profile['emotion_scores'].get(tag, 0.0)
@@ -44,7 +44,7 @@ def find_top_contributors(
         if contribution > 0.1:  # 최소 임계값
             contributors.append(('emotion', tag, contribution))
     
-    # Narrative traits 비교
+    # Narrative traits 비교 (서사 태그 간 기여도 계산)
     for tag in user_profile.get('narrative_traits', {}):
         user_score = user_profile['narrative_traits'].get(tag, 0.0)
         movie_score = movie_profile['narrative_traits'].get(tag, 0.0)
@@ -52,7 +52,7 @@ def find_top_contributors(
         if contribution > 0.1:
             contributors.append(('story_flow', tag, contribution))
     
-    # Ending preference 비교
+    # Ending preference 비교 (결말 선호 기여도 계산)
     for tag in user_profile.get('ending_preference', {}):
         user_score = user_profile['ending_preference'].get(tag, 0.0)
         movie_score = movie_profile['ending_preference'].get(tag, 0.0)

@@ -78,6 +78,7 @@ def find_movie(movies: List[Dict[str, Any]], movie_id: Optional[str], movie_titl
 
 
 def top_tags(score_map: Dict[str, Any], n: int = 2) -> List[str]:
+    # 점수 높은 순으로 상위 n개 태그 반환
     pairs: List[tuple[str, float]] = []
     for key, value in score_map.items():
         try:

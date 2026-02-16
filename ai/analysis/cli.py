@@ -28,8 +28,10 @@ def main():
     if os.getenv('AWS_ACCESS_KEY_ID', '').startswith('AKIA') and 'AWS_SESSION_TOKEN' in os.environ:
         del os.environ['AWS_SESSION_TOKEN']
 
+    # 사용자 ID 입력 (없으면 기본값 사용)
     user_id = input("사용자 ID를 입력하세요 (기본: user_test): ").strip() or "user_test"
     
+    # MovieMong 인스턴스 생성 (게이미피케이션 통합 클래스)
     mong = MovieMong(user_id)
     
     while True:
@@ -43,6 +45,7 @@ def main():
         choice = input("선택 > ")
         
         if choice == "1":
+            # 오늘의 질문 받기/답변하기
             q_data = mong.get_daily_question()
             print(f"\nQ. {q_data['question']}")
             
@@ -54,6 +57,7 @@ def main():
                 print(f"🚫 {q_data['message']}")
             
         elif choice == "2":
+            # 리뷰 작성 → 맛 분석/보상
             print("\n(테스트용) 영화 리뷰를 작성해주세요.")
             content = input("내용 > ")
             if not content:
@@ -66,10 +70,12 @@ def main():
             mong.add_review(content, is_detail)
             
         elif choice == "3":
+            # 홈 상태 조회
             data = mong.get_home_data()
             print(json.dumps(data, indent=2, ensure_ascii=False))
             
         elif choice == "4":
+            # 밥주기 룰렛
             print("\n🎰 두근두근 룰렛을 돌립니다... (비용: 무료)")
             # 룰렛 돌리기
             result = mong.play_roulette()

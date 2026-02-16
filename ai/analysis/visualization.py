@@ -58,9 +58,10 @@ def generate_tag_wordcloud(
             - 'penalty': 싫어하는 태그만
             - 'both': 두 가지 모두 (색상 구분)
     """
+    # 1) 한글 폰트 설정 (워드클라우드 한글 깨짐 방지)
     setup_korean_font()
     
-    # 사용자 선호도 로드
+    # 2) 사용자 선호도 로드
     preference = load_user_preference(user_id, preference_file)
     
     boost_tags = preference.get('boost_tags', [])
@@ -75,7 +76,7 @@ def generate_tag_wordcloud(
     print(f"싫어하는 태그: {len(penalty_tags)}개")
     print(f"태그 종류: {tag_type}\n")
     
-    # WordCloud 라이브러리 임포트 시도
+    # 3) WordCloud 라이브러리 임포트 시도
     try:
         from wordcloud import WordCloud
     except ImportError:
@@ -87,7 +88,7 @@ def generate_tag_wordcloud(
         create_tag_bar_chart(boost_tags, penalty_tags, boost_freq, penalty_freq, tag_type, output_file)
         return
     
-    # 워드클라우드 생성
+    # 4) 워드클라우드 생성 (boost/penalty/both 분기)
     if tag_type == 'boost':
         # 좋아하는 태그만
         tag_freq = boost_freq if boost_freq else {tag: 1 for tag in boost_tags}
@@ -167,7 +168,7 @@ def generate_tag_wordcloud(
     
     plt.tight_layout()
     
-    # 저장 또는 표시
+    # 5) 저장 또는 표시
     if output_file:
         plt.savefig(output_file, dpi=150, bbox_inches='tight', facecolor='white')
         print(f"💾 워드클라우드 저장: {output_file}")

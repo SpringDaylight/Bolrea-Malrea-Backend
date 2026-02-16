@@ -25,9 +25,12 @@ def build_user_profile(user_text: str, taxonomy: Dict) -> Dict:
     Returns:
         사용자 취향 프로필 (emotion_scores, narrative_traits, ending_preference)
     """
+    # 1) 택소노미에서 감정/서사 태그 목록을 가져온다.
     e_keys = taxonomy['emotion']['tags']
     n_keys = taxonomy['story_flow']['tags']
     
+    # 2) 입력 텍스트와 태그를 조합해 점수를 산출한다.
+    #    (현재는 LLM이 아닌 해시 기반 점수로 안정적으로 재현 가능)
     profile = {
         'user_text': user_text,
         'emotion_scores': embedding.score_tags(user_text, e_keys),
@@ -39,6 +42,7 @@ def build_user_profile(user_text: str, taxonomy: Dict) -> Dict:
         },
     }
     
+    # 3) 통합 프로필 반환
     return profile
 
 
@@ -58,7 +62,7 @@ def build_user_profile_from_multiple(texts: List[str], taxonomy: Dict) -> Dict:
     if not texts:
         raise ValueError("At least one text is required")
     
-    # 모든 텍스트를 합쳐서 분석
+    # 여러 텍스트를 하나로 합쳐 분석 (리뷰/코멘트가 여러 개일 때 사용)
     combined_text = ' '.join(texts)
     return build_user_profile(combined_text, taxonomy)
 
@@ -76,13 +80,14 @@ def build_user_profile_with_dislikes(likes: str, dislikes: str, taxonomy: Dict) 
     Returns:
         선호 프로필 + 비선호 태그 리스트
     """
+    # 1) 감정/서사 태그 목록 로드
     e_keys = taxonomy['emotion']['tags']
     n_keys = taxonomy['story_flow']['tags']
     
-    # 선호 프로필
+    # 2) 선호 텍스트로 기본 프로필 생성
     profile = build_user_profile(likes, taxonomy)
     
-    # 비선호 태그 추출 (간단한 키워드 매칭)
+    # 3) 비선호 텍스트에서 태그 점수를 계산해 임계값 이상만 제외 태그로 등록
     dislike_tags = []
     if dislikes:
         dislike_scores = embedding.score_tags(dislikes, e_keys)
@@ -91,6 +96,7 @@ def build_user_profile_with_dislikes(likes: str, dislikes: str, taxonomy: Dict) 
             if score > 0.6:  # 임계값
                 dislike_tags.append(tag)
     
+    # 4) 프로필에 비선호 태그 포함
     profile['dislike_tags'] = dislike_tags
     
     return profile
@@ -124,10 +130,10 @@ def extract_negative_filters_with_llm(user_text: str, bedrock_client=None) -> Di
     import boto3
     from dotenv import load_dotenv
     
-    # 환경 변수 로드
+    # 1) 환경 변수 로드 (AWS 설정)
     load_dotenv()
     
-    # Bedrock 클라이언트 생성
+    # 2) Bedrock 클라이언트 생성 (외부에서 주입되지 않았다면 생성)
     if bedrock_client is None:
         bedrock_client = boto3.client(
             'bedrock-runtime',
@@ -136,7 +142,7 @@ def extract_negative_filters_with_llm(user_text: str, bedrock_client=None) -> Di
             aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
         )
     
-    # 프롬프트 생성
+    # 3) 프롬프트 생성: 부정/긍정 의도를 분리하도록 지시
     prompt = f"""당신은 영화 추천 시스템의 사용자 의도 분석가입니다.
 
 사용자 입력: "{user_text}"
@@ -167,7 +173,7 @@ def extract_negative_filters_with_llm(user_text: str, bedrock_client=None) -> Di
 출력: {{"exclude_genres": ["Horror"], "exclude_tags": ["무서워요", "피가 튀어"], "include_genres": ["Romance"], "include_tags": ["로맨틱해요", "설레요"]}}
 """
     
-    # Bedrock 호출
+    # 4) Bedrock 호출 → JSON 파싱 → 필터 딕셔너리 반환
     try:
         response = bedrock_client.invoke_model(
             modelId=os.getenv('BEDROCK_MODEL_ID', 'anthropic.claude-3-haiku-20240307-v1:0'),
@@ -182,11 +188,11 @@ def extract_negative_filters_with_llm(user_text: str, bedrock_client=None) -> Di
             })
         )
         
-        # 응답 파싱
+        # 응답 파싱 (Bedrock 응답 body에서 텍스트 추출)
         response_body = json.loads(response['body'].read())
         content = response_body['content'][0]['text']
         
-        # JSON 추출 (LLM이 설명을 붙일 수 있으므로 JSON만 추출)
+        # JSON 추출 (설명 텍스트가 섞일 수 있어 중괄호 블록만 추출)
         import re
         json_match = re.search(r'\{[^}]+\}', content, re.DOTALL)
         if json_match:
@@ -194,7 +200,7 @@ def extract_negative_filters_with_llm(user_text: str, bedrock_client=None) -> Di
         else:
             filters = json.loads(content)
         
-        # 기본값 설정
+        # 기본값 보정 후 반환
         return {
             "exclude_genres": filters.get("exclude_genres", []),
             "exclude_tags": filters.get("exclude_tags", []),
@@ -206,7 +212,7 @@ def extract_negative_filters_with_llm(user_text: str, bedrock_client=None) -> Di
         print(f"⚠️ LLM 부정어 추출 실패: {e}")
         print("   -> 규칙 기반 백업 사용")
         
-        # Fallback: 규칙 기반 부정어 검출
+        # 5) Fallback: 규칙 기반 부정어 검출
         return detect_negation_fallback(user_text)
 
 
@@ -274,11 +280,11 @@ def detect_negation_fallback(text: str) -> Dict:
     include_genres = []
     include_tags = []
     
-    # 텍스트 전처리: "거나", "하거" -> "," 로 변경
+    # 1) 텍스트 전처리: "거나", "하거" -> "," 로 변경하여 분리 용이하게 함
     import re
     text = re.sub(r'(거나|하거)', ',', text)
     
-    # 문장을 마침표나 쉼표로 분리
+    # 2) 문장을 마침표/쉼표로 분리
     sentences = re.split(r'[.,]', text)
     
     for sentence in sentences:
@@ -289,7 +295,7 @@ def detect_negation_fallback(text: str) -> Dict:
         has_negation = any(neg in sentence for neg in NEGATION_KEYWORDS)
         has_positive = any(pos in sentence for pos in POSITIVE_KEYWORDS)
         
-        # 케이스 1: 부정어만 있음 -> 제외 목록
+        # 케이스 1: 부정어만 있음 -> 제외 목록에 추가
         if has_negation and not has_positive:
             # 개선: 부분 매칭으로 모든 키워드 검사
             for keyword, genre in GENRE_MAP.items():
@@ -301,7 +307,7 @@ def detect_negation_fallback(text: str) -> Dict:
                 if keyword in sentence and tag not in exclude_tags:
                     exclude_tags.append(tag)
         
-        # 케이스 2: 긍정어만 있음 -> 포함 목록
+        # 케이스 2: 긍정어만 있음 -> 포함 목록에 추가
         elif has_positive and not has_negation:
             for keyword, genre in GENRE_MAP.items():
                 if keyword in sentence and genre not in include_genres:
@@ -311,7 +317,7 @@ def detect_negation_fallback(text: str) -> Dict:
                 if keyword in sentence and tag not in include_tags:
                     include_tags.append(tag)
         
-        # 케이스 3: 부정어와 긍정어가 섞여 있음 (복잡)
+        # 케이스 3: 부정어와 긍정어가 섞여 있음
         # "A 말고 B" -> A 제외, B 포함
         elif has_negation and has_positive:
             # 부정어 위치 찾기
@@ -352,7 +358,7 @@ def detect_negation_fallback(text: str) -> Dict:
                     if keyword in around_pos and tag not in include_tags:
                         include_tags.append(tag)
     
-    # 포함 목록에 있는 것은 제외 목록에서 제거
+    # 3) 포함 목록에 있는 것은 제외 목록에서 제거 (충돌 해소)
     exclude_genres = [g for g in exclude_genres if g not in include_genres]
     exclude_tags = [t for t in exclude_tags if t not in include_tags]
     
@@ -391,13 +397,13 @@ def build_user_profile_with_negation(user_text: str, taxonomy: Dict, bedrock_cli
             'method_used': 'llm' or 'rule_based'
         }
     """
-    # 1. LLM으로 부정/긍정 의도 파악 (자동 Fallback 포함)
+    # 1) LLM으로 부정/긍정 의도 파악 (실패 시 규칙 기반으로 자동 전환)
     filters = extract_negative_filters_with_llm(user_text, bedrock_client)
     
-    # 2. 긍정 부분만으로 프로필 생성
+    # 2) 긍정 텍스트 기준으로 기본 프로필 생성
     profile = build_user_profile(user_text, taxonomy)
     
-    # 3. 제외/포함 조건 추가
+    # 3) 제외/포함 조건을 프로필에 주입
     profile['exclude_genres'] = filters.get('exclude_genres', [])
     profile['exclude_tags'] = filters.get('exclude_tags', [])
     profile['include_genres'] = filters.get('include_genres', [])
@@ -435,10 +441,10 @@ def analyze_user_preference_with_llm(user_text: str, taxonomy: Dict, bedrock_cli
     import boto3
     from dotenv import load_dotenv
     
-    # 환경 변수 로드
+    # 1) 환경 변수 로드
     load_dotenv()
     
-    # Bedrock 클라이언트 생성
+    # 2) Bedrock 클라이언트 생성 (실패 시 키워드 매칭으로 전환)
     if bedrock_client is None:
         try:
             bedrock_client = boto3.client(
@@ -452,11 +458,11 @@ def analyze_user_preference_with_llm(user_text: str, taxonomy: Dict, bedrock_cli
             print("   -> 키워드 매칭으로 대체")
             return _fallback_keyword_matching(user_text, taxonomy)
     
-    # 태그 목록 생성
+    # 3) 태그 목록 생성
     emotion_tags = taxonomy['emotion']['tags']
     narrative_tags = taxonomy['story_flow']['tags']
     
-    # 프롬프트 생성
+    # 4) 프롬프트 생성: 모든 태그에 대해 0~1 점수 부여 지시
     prompt = f"""당신은 영화 추천 시스템의 사용자 취향 분석 전문가입니다.
 
 사용자 입력: "{user_text}"
@@ -490,7 +496,7 @@ JSON 형식:
 """
     
     try:
-        # Bedrock 호출
+        # 5) Bedrock 호출
         response = bedrock_client.invoke_model(
             modelId=os.getenv('BEDROCK_MODEL_ID', 'anthropic.claude-3-haiku-20240307-v1:0'),
             body=json.dumps({
@@ -504,11 +510,11 @@ JSON 형식:
             })
         )
         
-        # 응답 파싱
+        # 6) 응답 파싱
         response_body = json.loads(response['body'].read())
         content = response_body['content'][0]['text']
         
-        # JSON 추출
+        # 7) JSON 추출
         import re
         json_match = re.search(r'\{.*\}', content, re.DOTALL)
         if json_match:
@@ -516,7 +522,7 @@ JSON 형식:
         else:
             result = json.loads(content)
         
-        # 기본값 설정 및 검증
+        # 8) 기본값 설정 및 검증
         profile = {
             'emotion_scores': result.get('emotion_scores', {}),
             'narrative_traits': result.get('narrative_traits', {}),
@@ -544,6 +550,7 @@ def _fallback_keyword_matching(user_text: str, taxonomy: Dict) -> Dict:
     e_keys = taxonomy['emotion']['tags']
     n_keys = taxonomy['story_flow']['tags']
     
+    # 키워드 매칭 기반으로 프로필 구성
     profile = {
         'user_text': user_text,
         'emotion_scores': embedding.score_tags(user_text, e_keys),

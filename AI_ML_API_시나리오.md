@@ -1,230 +1,305 @@
 # 프론트 → 백엔드 AI/ML API 시나리오
 
-이 문서는 프론트엔드가 API를 호출했을 때, **실제로 어떤 AI/ML 로직이 수행되고 어떤 응답이 오는지**를 시나리오별로 정리합니다.  
-현재 코드에 **실제로 연결된 엔드포인트 기준**으로 작성하고, 마지막에 **미연결(설계만 있는) 파이프라인**도 참고로 정리했습니다.
+이 문서는 프론트엔드가 API를 호출했을 때 **실제로 어떤 로직이 수행되고 어떤 응답이 오는지**를 시나리오별로 정리합니다.  
+현재 코드 기준으로 `app.py`에 연결된 **A-1 ~ A-7 ML 엔드포인트**와, `/api/*`로 제공되는 **게이미피케이션/칵테일 기능**을 함께 설명합니다.
 
-## 현재 구현된 시나리오
+> 참고: `utils/validator.validate_request()`는 **JSON 객체인지 여부만 확인**하며 스키마 타입 검증은 하지 않습니다.
 
-### 시나리오 1. 감정 칵테일 생성
+---
+
+## A-1 ~ A-7 (app.py에 직접 연결된 ML 엔드포인트)
+
+### 시나리오 A-1. 사용자 취향 분석
+요청: `POST /analyze/preference`  
+파일: `app.py`, `domain/a1_preference.py`
+
+요청 예시:
+```json
+{
+  "text": "감동적이고 따뜻한 영화 좋아해요",
+  "dislikes": "무서운 거 싫어"
+}
+```
+
+백엔드 처리 흐름:
+1. `validate_request("a1_preference_request.json", body)` (형식만 확인)
+2. `domain.a1_preference.analyze_preference()` 호출
+3. 택소노미 로드 → 해시 기반 점수 생성
+4. 규칙 기반 부정어 감지로 `dislike_tags`, `boost_tags` 생성
+
+응답 예시(요약):
+```json
+{
+  "user_text": "...",
+  "emotion_scores": {"감동적이에요": 0.83, "...": 0.12},
+  "narrative_traits": {"반전이 많아요": 0.42, "...": 0.07},
+  "ending_preference": {"happy": 0.63, "open": 0.41, "bittersweet": 0.29},
+  "dislike_tags": ["무서워요"],
+  "boost_tags": ["따뜻해요", "감동적이에요"]
+}
+```
+
+메모:
+- LLM 사용 안 함 (해시 기반 deterministic 점수)
+- 부정어 처리도 규칙 기반 fallback만 사용
+
+---
+
+### 시나리오 A-2. 영화 벡터화
+요청: `POST /movie/vector`  
+파일: `app.py`, `domain/a2_movie_vector.py`
+
+요청 예시:
+```json
+{
+  "movie_id": 123,
+  "title": "인생은 아름다워",
+  "overview": "2차 세계대전 중...",
+  "genres": ["드라마", "전쟁"]
+}
+```
+
+백엔드 처리 흐름:
+1. `validate_request("a2_movie_vector_request.json", body)`
+2. `domain.a2_movie_vector.process_movie_vector()` 실행
+3. 영화 텍스트 합성 → 해시 기반 점수 생성
+4. `embedding_text` 생성, `embedding`은 빈 배열로 반환
+
+응답 예시(요약):
+```json
+{
+  "movie_id": 123,
+  "title": "인생은 아름다워",
+  "emotion_scores": { ... },
+  "narrative_traits": { ... },
+  "direction_mood": { ... },
+  "character_relationship": { ... },
+  "ending_preference": { "happy": 0.61, "open": 0.27, "bittersweet": 0.44 },
+  "embedding_text": "Title: ... Emotions: ... Narrative: ...",
+  "embedding": []
+}
+```
+
+---
+
+### 시나리오 A-3. 만족 확률 계산
+요청: `POST /predict/satisfaction`  
+파일: `app.py`, `domain/a3_prediction.py`
+
+요청 예시:
+```json
+{
+  "user_profile": { "...": "A-1 결과" },
+  "movie_profile": { "...": "A-2 결과" },
+  "dislike_tags": ["무서워요"],
+  "boost_tags": ["감동적이에요"]
+}
+```
+
+백엔드 처리 흐름:
+1. `validate_request("a3_predict_request.json", body)`
+2. 코사인 유사도 + 보너스/페널티 계산
+3. `probability`, `confidence`, `breakdown` 구성
+
+응답 예시(요약):
+```json
+{
+  "movie_id": 123,
+  "title": "인생은 아름다워",
+  "probability": 0.82,
+  "confidence": 0.91,
+  "raw_score": 0.64,
+  "match_rate": 82.0,
+  "breakdown": {
+    "emotion_similarity": 0.90,
+    "narrative_similarity": 0.76,
+    "ending_similarity": 0.71,
+    "boost_score": 0.12,
+    "dislike_penalty": 0.05,
+    "top_factors": ["정서 톤", "서사 초점"]
+  }
+}
+```
+
+---
+
+### 시나리오 A-4. 설명 생성
+요청: `POST /explain/prediction`  
+파일: `app.py`, `domain/a4_explanation.py`
+
+요청 예시:
+```json
+{
+  "movie_title": "인생은 아름다워",
+  "match_rate": 82.0,
+  "key_factors": [
+    {"category": "emotion", "tag": "감동적이에요", "score": 0.9}
+  ]
+}
+```
+
+백엔드 처리 흐름:
+1. 템플릿 기반 설명 문구 생성
+2. 상위 요소를 자연어로 요약
+
+응답 예시(요약):
+```json
+{
+  "movie_title": "인생은 아름다워",
+  "match_rate": 82.0,
+  "explanation": "...",
+  "key_factors": [...],
+  "disclaimer": "추천은 정서·서사 태그 분석 기반이며..."
+}
+```
+
+---
+
+### 시나리오 A-5. 감성 검색 쿼리 생성
+요청: `POST /search/emotional`  
+파일: `app.py`, `domain/a5_emotional_search.py`
+
+요청 예시:
+```json
+{
+  "text": "우울한데 너무 무겁지 않은 영화",
+  "genres": ["드라마"],
+  "year_from": 2010
+}
+```
+
+백엔드 처리 흐름:
+1. 텍스트 키워드 → 감정 태그 점수 매핑
+2. 하이브리드 검색용 쿼리(JSON) 생성
+
+응답 예시(요약):
+```json
+{
+  "intent": "search",
+  "expanded_query": {"emotion_scores": {...}},
+  "hybrid_query": {
+    "query": {"bool": {"must": [], "filter": [...] }},
+    "knn": {"field": "emotion_vector", "query_vector": [...], "k": 50, "num_candidates": 200}
+  }
+}
+```
+
+메모:
+- 실제 검색 실행은 하지 않고, **검색용 payload만 반환**합니다.
+
+---
+
+### 시나리오 A-6. 그룹 시뮬레이션
+요청: `POST /group/simulate`  
+파일: `app.py`, `domain/a6_group_simulation.py`
+
+요청 예시:
+```json
+{
+  "members": [
+    {"user_id": "u1", "profile": { "...": "A-1 결과" }},
+    {"user_id": "u2", "profile": { "...": "A-1 결과" }}
+  ],
+  "movie_profile": { "...": "A-2 결과" },
+  "strategy": "least_misery"
+}
+```
+
+백엔드 처리 흐름:
+1. 각 멤버 만족 확률 계산 (A-3 로직 호출)
+2. 전략에 따라 그룹 점수 계산  
+   - `least_misery`: 최소값  
+   - `average`: 평균값
+
+응답 예시(요약):
+```json
+{
+  "group_score": 0.68,
+  "strategy": "least_misery",
+  "members": [
+    {"user_id": "u1", "probability": 0.70, "confidence": 0.9, "level": "만족"},
+    {"user_id": "u2", "probability": 0.68, "confidence": 0.88, "level": "보통"}
+  ],
+  "comment": "전반적으로 만족도가 높지만...",
+  "recommendation": "괜찮은 선택이지만, 다른 옵션도 고려해보세요.",
+  "statistics": {"min_satisfaction": 0.68, "max_satisfaction": 0.70, "avg_satisfaction": 0.69, "variance": 0.02}
+}
+```
+
+---
+
+### 시나리오 A-7. 취향 지도
+요청: `POST /map/taste`  
+파일: `app.py`, `domain/a7_taste_map.py`
+
+요청 예시:
+```json
+{
+  "user_text": "감동적인 영화 좋아해요",
+  "k": 8
+}
+```
+
+백엔드 처리 흐름:
+1. 텍스트 해시 기반 감정 점수 생성
+2. 상위 태그 조합으로 더미 클러스터 생성
+3. 해시 기반 2D 좌표 반환
+
+응답 예시(요약):
+```json
+{
+  "clusters": [
+    {"cluster_id": 0, "label": "감동적이에요·따뜻해요 분위기", "count": 10}
+  ],
+  "user_location": {"x": 0.33, "y": 0.71, "nearest_cluster": 0, "cluster_label": "..."}
+}
+```
+
+---
+
+## 게이미피케이션 / 칵테일 기능 (`/api/*`)
+
+### 시나리오 G-1. 감정 칵테일 생성
 요청: `POST /api/cocktail`  
 파일: `api/cocktail.py`, `ai/cocktail/*`
 
-요청 예시:
-```json
-{
-  "sweet": 70,
-  "spicy": 10,
-  "onion": 5,
-  "cheese": 5,
-  "dark": 30,
-  "salty": 20,
-  "mint": 10
-}
-```
-
-백엔드 처리 흐름:
-1. `api/cocktail.py`에서 요청 수신
-2. `EmotionCocktailGenerator.generate()` 실행  
-3. `ai/cocktail/validators.py`로 입력 검증  
-4. `ai/cocktail/analyzers.py`에서 맛 비율 계산 → Top-N 선택 → 라벨 생성  
-5. `ai/cocktail/analyzers.py`의 `LLMCommentGenerator`가 Bedrock으로 칵테일 이름/메시지 생성  
-6. `ai/cocktail/image_renderer.py`로 그라데이션 이미지 렌더링  
-
-응답 예시:
-```json
-{
-  "success": true,
-  "data": {
-    "image_url": "/static/output/cocktail_감정의_칵테일.png",
-    "ingredient_label": "설렘, 행복 70% + 우울, 진지 30%",
-    "cocktail_name": "감정의 칵테일",
-    "comfort_message": "오늘 하루도 수고하셨어요...",
-    "gradient_colors": ["#FFB7C5", "#4B0082"]
-  }
-}
-```
-
-메모:
-- Bedrock 호출 실패 시 기본 코멘트로 fallback 됩니다.  
-- `BEDROCK_REGION`, `BEDROCK_MODEL_ID` 환경 변수 필요.  
+핵심 흐름:
+1. 입력 검증 → 비율 계산 → Top-N 선택
+2. Bedrock LLM 코멘트 생성
+3. 이미지 렌더링 후 결과 반환
 
 ---
 
-### 시나리오 2. 리뷰 작성 → 맛 분석 + 보상
+### 시나리오 G-2. 리뷰 작성 → 맛 분석 + 보상
 요청: `POST /api/review`  
-파일: `api/gamification.py`, `ai/gamification/review.py`, `ai/analysis/sentiment.py`
+파일: `api/gamification.py`, `ai/gamification/review.py`
 
-요청 예시:
-```json
-{
-  "review": "정말 감동적이고 따뜻한 영화였어요."
-}
-```
-
-백엔드 처리 흐름:
-1. `MovieMong(DEMO_USER_ID)` 인스턴스 생성  
-2. 리뷰 길이로 보상 결정 (간단/상세)  
-3. `ai/analysis/sentiment.analyze_user_preference_with_llm`로 감정 태그 분석  
-4. 감정 태그 → FLAVOR 매핑 후 사용자 FlavorStat 업데이트  
-
-응답 예시:
-```json
-{
-  "success": true,
-  "reward": {"type": "simple", "exp": 5, "popcorn": 3},
-  "analysis": {
-    "flavor": "Sweet",
-    "flavor_name": "달콤",
-    "main_flavor": "Sweet",
-    "main_flavor_name": "달콤"
-  },
-  "message": "달콤 팝콘 획득! (EXP +5, 팝콘 +3)"
-}
-```
-
-메모:
-- LLM 실패 시 키워드 기반 fallback 사용  
-- 현재는 `DEMO_USER_ID = "user_demo"` 고정
+핵심 흐름:
+1. 리뷰 길이로 EXP/팝콘 보상
+2. LLM 감정 분석 → Flavor 매핑
+3. FlavorStat 업데이트
 
 ---
 
-### 시나리오 3. 홈 화면 조회 (게이미피케이션 상태)
-요청: `GET /api/home`  
-파일: `api/gamification.py`, `ai/gamification/__init__.py`, `ai/gamification/core.py`
+### 시나리오 G-3. 홈 상태/밥주기/테마 상점
+요청:
+- `GET /api/home`
+- `POST /api/feeding`
+- `GET /api/shop`, `POST /api/shop/buy`, `POST /api/shop/apply`
 
-백엔드 처리 흐름:
-1. `MovieMong.get_home_data()` 호출  
-2. 사용자 레벨/경험치/팝콘/이미지/오늘의 질문 상태 조립  
-
-응답 예시(요약):
-```json
-{
-  "user_id": "user_demo",
-  "character": {
-    "level": 1,
-    "stage": "Egg",
-    "exp": 0,
-    "flavor": "Sweet",
-    "image_path": "리뷰몽_1차.png"
-  },
-  "currency": {"popcorn": 0},
-  "daily_status": {"can_answer_question": true, "today_question": "..."}
-}
-```
+핵심 흐름:
+1. `MovieMong`으로 상태 집계
+2. 룰렛 확률로 보상 지급
+3. 테마 구매/적용 처리
 
 ---
 
-### 시나리오 4. 밥주기 룰렛
-요청: `POST /api/feeding`  
-파일: `api/gamification.py`, `ai/gamification/feeding.py`
+## 추가 메모
 
-백엔드 처리 흐름:
-1. `ProbabilityEngine` 확률로 상품 선정  
-2. EXP/팝콘 보상 지급  
-3. 마지막 밥준 날짜 기록  
+- 그룹 추천은 **두 가지 엔드포인트가 존재**합니다.  
+  - `/group/simulate` (A-6, app.py)  
+  - `/api/group/recommend` (gamification router)  
+  목적은 유사하지만 입력 형식이 다릅니다.
 
-응답 예시(요약):
-```json
-{
-  "success": true,
-  "prize": "핫도그",
-  "target_angle": 108,
-  "message": "든든한 핫도그 당첨! (Good)",
-  "reward": {"exp": 40, "popcorn": 15}
-}
-```
-
----
-
-### 시나리오 5. 그룹 추천
-요청: `POST /api/group/recommend`  
-파일: `api/gamification.py`, `ai/analysis/group_recommendation.py`, `ai/analysis/embedding.py`, `ai/analysis/similarity.py`
-
-요청 예시:
-```json
-{
-  "users": [
-    {"name": "A", "text": "감동적인 영화 좋아해요"},
-    {"name": "B", "text": "반전 많은 영화 좋아해요"}
-  ],
-  "target_movie_id": 123
-}
-```
-
-백엔드 처리 흐름:
-1. 서버 시작 시 `TAXONOMY`, `GROUPED_MOVIES` 로드  
-2. 사용자 텍스트 → 간이 프로필 생성  
-3. 대상 영화 프로필 생성 → 사용자별 만족 확률 계산  
-4. 그룹 점수는 평균값 사용  
-
-응답 예시(요약):
-```json
-{
-  "success": true,
-  "data": {
-    "movie_title": "인생은 아름다워",
-    "group_probability": 0.72,
-    "user_details": [
-      {"name": "A", "probability": 0.80, "level": "만족"},
-      {"name": "B", "probability": 0.64, "level": "보통"}
-    ]
-  }
-}
-```
-
-메모:
-- `data/movies_dataset_final.json`, `data/emotion_tag.json` 경로가 필요합니다.  
-  현재 리포에 `ml/data/*`만 존재하면 경로 조정이 필요합니다.
-
----
-
-### 시나리오 6. 테마 상점/적용 (게이미피케이션)
-요청:  
-`GET /api/shop`  
-`POST /api/shop/buy`  
-`POST /api/shop/apply`  
-
-파일: `api/gamification.py`, `ai/gamification/theme.py`
-
-백엔드 처리 흐름:
-1. 보유 테마 조회 및 상태 반환  
-2. 팝콘 잔액 확인 후 구매 처리  
-3. 적용 테마 업데이트  
-
----
-
-## 설계상 존재하지만 API 미연결인 시나리오 (참고)
-
-아래 파이프라인은 `domain/*`에 구현돼 있으나, 현재 FastAPI 라우터에는 연결되어 있지 않습니다.  
-필요 시 신규 라우터로 연결하면 프론트에서 직접 호출 가능해집니다.
-
-### A-1 사용자 취향 분석
-파일: `domain/a1_preference.py`  
-기능: 사용자 텍스트 → 취향 벡터 + 부정어 처리
-
-### A-2 영화 벡터화
-파일: `domain/a2_movie_vector.py`  
-기능: 영화 메타데이터 → 정서/서사/연출/캐릭터 점수화
-
-### A-3 만족 확률 계산
-파일: `domain/a3_prediction.py`  
-기능: 사용자 프로필 vs 영화 프로필 매칭 확률
-
-### A-4 설명 생성
-파일: `domain/a4_explanation.py`  
-기능: A-3 결과를 자연어 설명으로 변환
-
-### A-5 감성 검색
-파일: `domain/a5_emotional_search.py`  
-기능: 감정 키워드 확장 + 하이브리드 검색 쿼리 생성
-
-### A-7 취향 지도
-파일: `domain/a7_taste_map.py`  
-기능: 텍스트 기반 취향 지도(더미 클러스터) 생성
-
----
-
-## 다음 단계 제안
-1. 위 “미연결 시나리오”에 대한 API 라우터 추가
-2. `data/` 경로 정리 (현재 `ml/data`와 불일치)
-3. 실제 프론트 요청/응답 예시를 스웨거(OpenAPI)와 일치시키기
+- A-1 ~ A-7은 현재 **LLM 호출 없이 deterministic 점수 기반**으로 구현되어 있습니다.  
+  (LLM 기반 고정밀 분석은 `ai/analysis/*` 모듈에 구현되어 있음)

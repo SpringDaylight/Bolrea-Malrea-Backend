@@ -5,8 +5,14 @@ from typing import Any, Dict, List, Optional
 from . import embedding
 from .similarity import calculate_satisfaction_probability
 
+# A-6 그룹 추천:
+# - 사용자 텍스트 -> 간이 취향 프로필
+# - 영화 프로필과 매칭 -> 사용자별 만족 확률
+# - 그룹 점수는 현재 평균값(도메인 레이어에서 전략 교체 가능)
+
 
 def build_user_profile(user_text: str, taxonomy: Dict[str, Any]) -> Dict[str, Any]:
+    # LLM 없이도 재현 가능한 방식으로 사용자 취향 벡터 생성
     emotion_tags = taxonomy["emotion"]["tags"]
     story_tags = taxonomy["story_flow"]["tags"]
     return {
@@ -24,6 +30,7 @@ def parse_users(users_text: Optional[str], users_json: Optional[str]) -> List[Di
     users: List[Dict[str, Any]] = []
 
     if users_json:
+        # JSON 문자열: [{"name": "...", "text": "...", "likes": [...], "dislikes": [...]}]
         raw_users = json.loads(users_json)
         if not isinstance(raw_users, list):
             raise ValueError("--users-json 값은 사용자 객체 리스트여야 합니다.")
@@ -40,6 +47,7 @@ def parse_users(users_text: Optional[str], users_json: Optional[str]) -> List[Di
                 }
             )
     elif users_text:
+        # "이름:텍스트;이름:텍스트" 형식 지원
         chunks = [x.strip() for x in users_text.split(";") if x.strip()]
         for idx, chunk in enumerate(chunks):
             if ":" in chunk:
@@ -54,6 +62,7 @@ def parse_users(users_text: Optional[str], users_json: Optional[str]) -> List[Di
 
 
 def find_movie(movies: List[Dict[str, Any]], movie_id: Optional[str], movie_title: Optional[str]) -> Dict[str, Any]:
+    # ID 우선, 없으면 제목으로 검색
     if movie_id is not None:
         for movie in movies:
             if str(movie.get("id")) == str(movie_id):
@@ -80,6 +89,7 @@ def top_tags(score_map: Dict[str, Any], n: int = 2) -> List[str]:
 
 
 def build_movie_style_text(movie_profile: Dict[str, Any]) -> str:
+    # 상위 감정/서사 태그로 간단 설명 문구 생성
     emotion_tags = top_tags(movie_profile.get("emotion_scores", {}), 2)
     narrative_tags = top_tags(movie_profile.get("narrative_traits", {}), 2)
 
@@ -120,12 +130,14 @@ def analyze_group_satisfaction(
     """
     그룹의 영화 만족도를 분석합니다.
     """
+    # 1) 대상 영화 프로필 생성
     target_movie = find_movie(movies, target_movie_id, target_movie_title)
     movie_profile = embedding.build_profile(target_movie, taxonomy, bedrock_client=None)
 
     user_results: List[Dict[str, Any]] = []
     user_probabilities: List[float] = []
 
+    # 2) 사용자별 만족 확률 계산
     for user in users:
         user_profile = build_user_profile(user["text"], taxonomy)
         result = calculate_satisfaction_probability(
@@ -145,6 +157,7 @@ def analyze_group_satisfaction(
             "level": to_satisfaction_level(prob)
         })
 
+    # 3) 그룹 점수 계산 (평균)
     group_prob = sum(user_probabilities) / len(user_probabilities) if user_probabilities else 0.0
 
     return {

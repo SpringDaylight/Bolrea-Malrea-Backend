@@ -1,3 +1,9 @@
+"""
+로컬 프롬프트 테스트 실행기
+
+- a1_user_preference 프롬프트 + 스키마로 샘플 입력 테스트
+"""
+
 import json
 from pathlib import Path
 

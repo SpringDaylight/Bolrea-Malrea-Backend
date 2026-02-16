@@ -1,3 +1,11 @@
+"""
+프롬프트 + 스키마 기반 LLM 실행기
+
+- YAML 프롬프트 로드
+- JSON 스키마로 결과 형태 검증
+- 실제 LLM/Mock 클라이언트 모두 지원
+"""
+
 import json
 from pathlib import Path
 
@@ -22,6 +30,7 @@ def load_json(path: str) -> dict:
 
 
 def render_prompt(prompt_data: dict, input_text: str) -> str:
+    # system/user 템플릿에 입력 텍스트 삽입
     system = prompt_data.get("system", "").strip()
     user = prompt_data.get("user", "").strip()
     user = user.replace("{{input_text}}", input_text)
@@ -29,6 +38,7 @@ def render_prompt(prompt_data: dict, input_text: str) -> str:
 
 
 def validate_schema_basic(schema: dict, data: dict) -> None:
+    # 최소 필수 키와 타입만 확인하는 경량 검증
     required = schema.get("required", [])
     for key in required:
         if key not in data:

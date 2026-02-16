@@ -3,6 +3,11 @@
 OpenSearch 대신 numpy 기반 메모리 검색
 """
 
+"""
+샘플 분석 모듈 (보관용 스냅샷)
+ai/analysis/vector_db.py와 동일한 구조의 레거시/샘플 버전입니다.
+"""
+
 import pickle
 from typing import Dict, List
 

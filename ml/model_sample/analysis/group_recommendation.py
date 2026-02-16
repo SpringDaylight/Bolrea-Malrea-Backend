@@ -1,4 +1,9 @@
 ﻿import argparse
+"""
+샘플 분석 모듈 (보관용 스냅샷)
+ai/analysis/group_recommendation.py와 동일한 구조의 레거시/샘플 버전입니다.
+"""
+
 import json
 from typing import Any, Dict, List, Optional
 

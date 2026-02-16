@@ -1,5 +1,13 @@
 ﻿# A-7 영화 취향 지도 (계층적 클러스터링)
 
+"""
+A-7 영화 취향 지도 (클러스터링)
+
+- 영화 프로필을 고차원 벡터로 변환
+- UMAP/Random Projection으로 2D 투영
+- K-Means 및 장르 기반 계층 클러스터링 제공
+"""
+
 import argparse
 import json
 import math

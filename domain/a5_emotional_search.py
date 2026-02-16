@@ -1,3 +1,11 @@
+"""
+A-5: 감성 검색
+
+- 입력 텍스트에서 감정 키워드를 태그로 확장
+- 감정 점수 벡터 생성
+- 장르/연도 필터와 함께 하이브리드 검색 쿼리 구성
+"""
+
 # 감성 검색 로직
 def emotional_search(payload: dict) -> dict:
     """
@@ -31,12 +39,15 @@ def emotional_search(payload: dict) -> dict:
     taxonomy = load_taxonomy()
     emotion_tags = taxonomy.get("emotion", {}).get("tags", [])
     emotion_scores = {tag: 0.0 for tag in emotion_tags}
+
+    # 1) 텍스트 내 키워드 -> 태그 점수 부여
     if isinstance(text, str):
         for k, tag in keyword_map.items():
             if k in text:
                 if tag in emotion_scores:
                     emotion_scores[tag] = max(emotion_scores.get(tag, 0.0), 0.8)
 
+    # 2) "무겁지 않다/가볍다" 류 표현은 밝은 분위기 가중치
     if isinstance(text, str):
         if "무겁지 않" in text or "가볍" in text:
             emotion_scores["밝은 분위기예요"] = max(
@@ -46,6 +57,7 @@ def emotional_search(payload: dict) -> dict:
                 emotion_scores.get("잔잔해요", 0.0), 0.6
             )
 
+    # 3) 키워드가 하나도 없을 때 fallback 기본 점수
     if max(emotion_scores.values()) == 0.0:
         # fallback deterministic scores
         emotion_scores = {tag: 0.0 for tag in emotion_tags}
@@ -53,6 +65,8 @@ def emotional_search(payload: dict) -> dict:
             emotion_scores["감동적이에요"] = 0.6
         if "잔잔해요" in emotion_scores:
             emotion_scores["잔잔해요"] = 0.4
+
+    # 4) 벡터 쿼리용 리스트로 변환
     query_vector = [emotion_scores[tag] for tag in emotion_tags]
     filters = []
     genres = payload.get("genres") or []

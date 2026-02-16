@@ -121,7 +121,7 @@ def simulate_group(payload: dict) -> dict:
             "level": _level_from_prob(prob)
         })
     
-    # 그룹 점수 계산
+    # 그룹 점수 계산 (전략 선택)
     if strategy == "least_misery":
         # Least Misery: 최소값 사용
         group_prob = min(user_probs)

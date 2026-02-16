@@ -5,6 +5,11 @@
 해당 영화의 세부 태그를 추출하여 가중치를 적용합니다.
 """
 
+"""
+샘플 분석 모듈 (보관용 스냅샷)
+ai/analysis/preference.py와 동일한 구조의 레거시/샘플 버전입니다.
+"""
+
 import json
 from typing import Dict, List
 from . import embedding

@@ -1,5 +1,10 @@
 ﻿## A-2 영화 특성 추출 및 벡터화
 
+"""
+샘플 분석 모듈 (보관용 스냅샷)
+ai/analysis/embedding.py와 동일한 구조의 레거시/샘플 버전입니다.
+"""
+
 import argparse
 import hashlib
 import json

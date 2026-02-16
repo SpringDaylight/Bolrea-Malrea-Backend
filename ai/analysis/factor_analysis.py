@@ -1,5 +1,12 @@
 ﻿## A-4 설명 가능한 취향 추천 (LLM)
 
+"""
+A-4 설명 가능한 취향 추천 (LLM 전/후처리)
+
+- 사용자/영화 프로필에서 주요 기여 태그 추출
+- 템플릿 기반 설명 생성 (LLM 대체 가능)
+"""
+
 import argparse
 import json
 from typing import Dict, List, Tuple

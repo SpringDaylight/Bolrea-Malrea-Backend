@@ -1,5 +1,10 @@
 ﻿# A-7 영화 취향 지도 (계층적 클러스터링)
 
+"""
+샘플 분석 모듈 (보관용 스냅샷)
+ai/analysis/clustering.py와 동일한 구조의 레거시/샘플 버전입니다.
+"""
+
 import argparse
 import json
 import math

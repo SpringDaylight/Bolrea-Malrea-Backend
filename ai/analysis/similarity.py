@@ -1,5 +1,13 @@
 ﻿## A-3 취향 시뮬레이터
 
+"""
+A-3 취향 시뮬레이터
+
+- 코사인 유사도 기반 매칭
+- 좋아하는 태그 보너스 / 싫어하는 태그 페널티
+- 최종 점수를 확률로 변환
+"""
+
 import argparse
 import json
 import math
@@ -14,6 +22,7 @@ from . import embedding
 # 0.0: 직각 (무관계)
 # -1.0: 정반대 방향 (취향 불일치)
 def cosine_sim(a: List[float], b: List[float]) -> float:
+    # 방향성 유사도 (벡터 크기 영향 최소화)
     dot = sum(x * y for x, y in zip(a, b))
     na = math.sqrt(sum(x * x for x in a))
     nb = math.sqrt(sum(y * y for y in b))

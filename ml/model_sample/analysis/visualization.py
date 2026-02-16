@@ -4,6 +4,11 @@
 마이페이지에서 사용자가 좋아하는 영화의 태그를 워드클라우드로 시각화
 """
 
+"""
+샘플 분석 모듈 (보관용 스냅샷)
+ai/analysis/visualization.py와 동일한 구조의 레거시/샘플 버전입니다.
+"""
+
 import argparse
 import json
 from typing import Dict, List

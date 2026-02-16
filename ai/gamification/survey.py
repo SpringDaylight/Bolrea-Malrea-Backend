@@ -1,4 +1,11 @@
 
+"""
+초기 설문(Onboarding) 처리
+
+- 설문 응답을 취향 프로필(Boost/Penalty/가중치)로 변환
+- `user_preferences.json`에 저장하여 추천 엔진에서 활용
+"""
+
 import json
 import os
 from typing import Dict, List, Any
@@ -36,6 +43,7 @@ class SurveyMixin:
             "safety_filters": []
         }
         
+        # 질문 ID -> 질문 정의 매핑
         q_map = {q['id']: q for q in questions}
 
         for q_id, user_answer in answers.items():
@@ -56,10 +64,10 @@ class SurveyMixin:
                 # 프론트엔드가 'label' 텍스트를 그대로 보낼지, 별도 value를 보낼지에 따라 다르지만
                 # 현재 구조상 label이 유니크하므로 label 매칭 시도
                 
-                # 1. Label 매칭
+                # 1) Label 매칭
                 opt = next((o for o in q_def['options'] if o['label'] == val), None)
                 
-                # 2. Value 매칭 (혹시 프론트가 value를 보낼 경우)
+                # 2) Value 매칭 (혹시 프론트가 value를 보낼 경우)
                 if not opt:
                      opt = next((o for o in q_def['options'] if o.get('value') == val), None)
 
@@ -72,7 +80,7 @@ class SurveyMixin:
                     if 'negative_tags' in opt:
                         profile['penalty_tags'].extend(opt['negative_tags'])
                     
-                    # 가중치 (Importance)
+                    # 가중치 (Importance) - 중요도에 따라 가중치 반영
                     if 'weight' in opt:
                         for k, v in opt['weight'].items():
                             # 기존 가중치에 합산 or 최대값? 합산이 자연스러움
@@ -82,11 +90,11 @@ class SurveyMixin:
                     if 'preference' in opt:
                         profile['runtime_preference'].update(opt['preference'])
                         
-                    # 컨텍스트
+                    # 컨텍스트 (상황)
                     if 'context' in opt:
                          profile['context'].append(opt['context'])
                          
-                    # 안전 필터 (레벨 등)
+                    # 안전 필터 (연령/수위 등)
                     if 'safety_level' in opt:
                         profile['safety_filters'].append({q_id: opt['safety_level']})
 

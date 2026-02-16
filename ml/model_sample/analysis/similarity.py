@@ -1,5 +1,10 @@
 ﻿## A-3 취향 시뮬레이터
 
+"""
+샘플 분석 모듈 (보관용 스냅샷)
+ai/analysis/similarity.py와 동일한 구조의 레거시/샘플 버전입니다.
+"""
+
 import argparse
 import json
 import math

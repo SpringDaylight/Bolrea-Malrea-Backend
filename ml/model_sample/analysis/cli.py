@@ -3,6 +3,11 @@
 사용자의 영화 기록 활동을 펫 육성 게임으로 변환하여 동기 부여를 제공하는 모듈 (Refactored)
 """
 
+"""
+샘플 분석 모듈 (보관용 스냅샷)
+ai/analysis/cli.py와 동일한 구조의 레거시/샘플 버전입니다.
+"""
+
 import json
 import os
 import sys

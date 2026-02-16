@@ -5,6 +5,11 @@ A-3에서 계산된 만족 확률 결과를 받아서
 자연어로 "왜 이 영화가 당신에게 맞는지" 설명을 생성합니다.
 """
 
+"""
+샘플 분석 모듈 (보관용 스냅샷)
+ai/analysis/description.py와 동일한 구조의 레거시/샘플 버전입니다.
+"""
+
 import json
 from typing import Dict, List, Optional
 import os

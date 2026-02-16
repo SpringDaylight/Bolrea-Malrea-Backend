@@ -50,6 +50,7 @@ def generate_explanation(
         자연어 설명 문자열
     """
     if bedrock_client is None:
+        # 클라이언트가 없으면 템플릿 기반 설명으로 fallback
         bedrock_client = get_bedrock_client()
     
     if bedrock_client is None:

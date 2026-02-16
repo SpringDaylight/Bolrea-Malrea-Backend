@@ -1,5 +1,10 @@
 ﻿## A-4 설명 가능한 취향 추천 (LLM)
 
+"""
+샘플 분석 모듈 (보관용 스냅샷)
+ai/analysis/factor_analysis.py와 동일한 구조의 레거시/샘플 버전입니다.
+"""
+
 import argparse
 import json
 from typing import Dict, List, Tuple

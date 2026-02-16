@@ -1,4 +1,12 @@
 
+"""
+리뷰 분석 및 보상 처리 (게이미피케이션)
+
+- 리뷰 길이에 따라 EXP/팝콘 보상
+- LLM 기반 감정 분석 -> 8가지 맛(Flavor)로 매핑
+- 실패 시 키워드 기반 fallback
+"""
+
 from typing import Optional, Dict
 # from database import db
 from models import FlavorStat, User # Added User explicit import if needed, or rely on core
@@ -17,7 +25,7 @@ class ReviewMixin:
     def add_review(self, review_text: str, is_detailed: bool = False) -> Dict:
         """리뷰 작성 시 보상 및 맛 분석 (LLM 사용)"""
         print(f"Adding review: '{review_text}' (Length: {len(review_text)})")
-        # 1. 보상
+        # 1) 리뷰 길이 기준 보상 계산
         if is_detailed and len(review_text) >= 50:
             exp_gain = 30
             popcorn_gain = 12
@@ -31,11 +39,11 @@ class ReviewMixin:
         self.add_exp(exp_gain)
         self.add_popcorn(popcorn_gain)
         
-        # 2. 맛 분석 (LLM)
+        # 2) 맛 분석 (LLM 기반 감정 태그 -> flavor 매핑)
         flavor_result = self._analyze_flavor_with_llm(review_text)
         flavor_name = FLAVORS[flavor_result]['name']
         
-        # 3. 사용자 데이터 갱신 (DB)
+        # 3) 사용자 데이터 갱신 (DB)
         user = self._get_user_model()
         
         # 해당 맛 스탯 업데이트
@@ -90,6 +98,7 @@ class ReviewMixin:
             emotion_scores = analysis.get('emotion_scores', {})
             flavor_scores = {k: 0.0 for k in FLAVORS.keys()}
             
+            # 감정 태그 -> 맛(Flavor) 매핑
             MAPPING = {
                 "Sweet": ["따뜻해요", "힐링돼요", "설레요", "로맨틱해요", "감동적이에요", "행복", "사랑"],
                 "Spicy": ["무서워요", "소름 돋아요", "긴장돼요", "충격", "공포"],
@@ -100,6 +109,7 @@ class ReviewMixin:
                 "Mint": ["몽환적이에요", "독특해요", "스타일이 독특해요", "SF"]
             }
             
+            # 점수를 해당 flavor에 누적
             for tag, score in emotion_scores.items():
                 for flavor, keywords in MAPPING.items():
                     if tag in keywords:
@@ -111,6 +121,7 @@ class ReviewMixin:
             
             best_flavor = max(flavor_scores, key=flavor_scores.get)
             
+            # LLM 결과가 약하거나 키워드 매칭만 된 경우 fallback 사용
             if analysis.get('method_used') == 'keyword_matching' or flavor_scores[best_flavor] < 0.1:
                 simple_flavor = self._simple_keyword_analysis(text)
                 if simple_flavor:

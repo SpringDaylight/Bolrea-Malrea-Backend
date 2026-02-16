@@ -1,3 +1,10 @@
+"""
+테마 상점/적용 로직
+
+- 팝콘으로 테마 구매
+- 보유 테마 목록 조회 및 적용
+"""
+
 from typing import Dict, List
 from typing import Dict, List
 # from database import db

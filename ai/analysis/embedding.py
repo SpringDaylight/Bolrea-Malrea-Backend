@@ -1,5 +1,13 @@
 ﻿## A-2 영화 특성 추출 및 벡터화
 
+"""
+A-2 영화 특성 추출 및 벡터화
+
+- 영화 메타데이터 -> 감정/서사/연출/캐릭터 태그 점수
+- Bedrock Titan Embedding v2로 1024차원 임베딩 생성
+- LLM 실패 시 해시 기반 deterministic 점수로 fallback
+"""
+
 import argparse
 import hashlib
 import json
@@ -28,6 +36,7 @@ def load_taxonomy(path: str = None):
 
 # 정서 태그 값으로 더미 값 입력(fallback 용도로 유지)
 def stable_score(text: str, tag: str) -> float:
+    # 입력과 태그의 해시를 이용한 재현 가능한 점수 (LLM 실패 시 사용)
     h = hashlib.sha256((text + '||' + tag).encode('utf-8')).hexdigest()
     v = int(h[:8], 16) / 0xFFFFFFFF
     return round(v, 3)
@@ -64,6 +73,7 @@ def analyze_with_llm(text: str, taxonomy: Dict, bedrock_client=None) -> Dict:
     AWS Bedrock을 사용하여 영화 텍스트를 분석하고 정서 태그를 추출합니다.
     """
     if bedrock_client is None:
+        # 클라이언트가 없으면 상위 로직에서 fallback 처리
         print("Bedrock 클라이언트를 사용할 수 없어 fallback 모드로 실행합니다.")
         return None
     

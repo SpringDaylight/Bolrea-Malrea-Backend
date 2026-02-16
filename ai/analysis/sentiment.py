@@ -1,5 +1,10 @@
 ﻿## A-1 정서 기반 취향 모델링
 
+"""
+- 사용자 텍스트 -> 정서/서사 태그 점수화
+- LLM 기반 정밀 분석 + 규칙 기반 부정어 처리 fallback
+"""
+
 import argparse
 import json
 from typing import Dict, List

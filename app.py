@@ -58,20 +58,219 @@ def health_check():
 
 @app.post("/analyze/preference")
 def analyze_preference_endpoint(body: dict) -> dict:
+    """
+    Analyze user preference from text input and optionally save to database
+    
+    Request body:
+        - text: User input text (required)
+        - dislikes: Comma-separated dislike tags (optional)
+        - user_id: User ID to save preference (optional)
+        - save_to_db: Whether to save to database (default: False)
+    """
+    from db import SessionLocal
+    from repositories.user_preference import UserPreferenceRepository
+    
     try:
         body = validate_request("a1_preference_request.json", body)
-        return analyze_preference(body)
+        result = analyze_preference(body)
+        
+        # Save to database if user_id is provided and save_to_db is True
+        user_id = body.get("user_id")
+        save_to_db = body.get("save_to_db", False)
+        
+        if user_id and save_to_db:
+            db = SessionLocal()
+            try:
+                repo = UserPreferenceRepository(db)
+                
+                # Prepare preference vector JSON
+                preference_vector_json = {
+                    "emotion_scores": result["emotion_scores"],
+                    "narrative_traits": result["narrative_traits"],
+                    "direction_mood": result["direction_mood"],
+                    "character_relationship": result["character_relationship"],
+                    "ending_preference": result["ending_preference"]
+                }
+                
+                # Save to database
+                saved_preference = repo.upsert(
+                    user_id=user_id,
+                    preference_vector_json=preference_vector_json,
+                    boost_tags=result.get("boost_tags", []),
+                    dislike_tags=result.get("dislike_tags", []),
+                    penalty_tags=[]  # Can be added later if needed
+                )
+                
+                result["saved"] = True
+                result["preference_id"] = saved_preference.id
+            finally:
+                db.close()
+        else:
+            result["saved"] = False
+        
+        return result
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/users/{user_id}/preference")
+def get_user_preference_endpoint(user_id: str) -> dict:
+    """
+    Get saved user preference by user_id
+    
+    Returns:
+        User preference data including vectors and tags
+    """
+    from db import SessionLocal
+    from repositories.user_preference import UserPreferenceRepository
+    
+    db = SessionLocal()
+    try:
+        repo = UserPreferenceRepository(db)
+        preference = repo.get_by_user_id(user_id)
+        
+        if not preference:
+            raise HTTPException(status_code=404, detail=f"Preference not found for user_id: {user_id}")
+        
+        return {
+            "user_id": preference.user_id,
+            "preference_vector": preference.preference_vector_json,
+            "persona_code": preference.persona_code,
+            "boost_tags": preference.boost_tags,
+            "dislike_tags": preference.dislike_tags,
+            "penalty_tags": preference.penalty_tags,
+            "updated_at": preference.updated_at.isoformat() if preference.updated_at else None
+        }
+    finally:
+        db.close()
 
 
 @app.post("/movie/vector")
 def movie_vector_endpoint(body: dict) -> dict:
+    """
+    Process movie vector and optionally save to database
+    
+    Request body:
+        - movie_id: Movie ID (required)
+        - title: Movie title (required)
+        - overview, synopsis, keywords, genres, directors, cast: Movie metadata (optional)
+        - save_to_db: Whether to save to database (default: False)
+    """
+    from db import SessionLocal
+    from repositories.movie_vector import MovieVectorRepository
+    
     try:
         body = validate_request("a2_movie_vector_request.json", body)
-        return process_movie_vector(body)
+        result = process_movie_vector(body)
+        
+        # Save to database if save_to_db is True
+        save_to_db = body.get("save_to_db", False)
+        
+        if save_to_db:
+            db = SessionLocal()
+            try:
+                repo = MovieVectorRepository(db)
+                
+                # Save to database
+                saved_vector = repo.upsert(
+                    movie_id=result["movie_id"],
+                    emotion_scores=result["emotion_scores"],
+                    narrative_traits=result["narrative_traits"],
+                    direction_mood=result["direction_mood"],
+                    character_relationship=result["character_relationship"],
+                    ending_preference=result["ending_preference"],
+                    embedding_text=result.get("embedding_text"),
+                    embedding_vector=result.get("embedding", [])
+                )
+                
+                result["saved"] = True
+                result["vector_id"] = saved_vector.id
+            finally:
+                db.close()
+        else:
+            result["saved"] = False
+        
+        return result
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/movies/{movie_id}/vector")
+def get_movie_vector_endpoint(movie_id: int) -> dict:
+    """
+    Get saved movie vector by movie_id
+    
+    Returns:
+        Movie vector data including all feature scores
+    """
+    from db import SessionLocal
+    from repositories.movie_vector import MovieVectorRepository
+    
+    db = SessionLocal()
+    try:
+        repo = MovieVectorRepository(db)
+        vector = repo.get_by_movie_id(movie_id)
+        
+        if not vector:
+            raise HTTPException(status_code=404, detail=f"Vector not found for movie_id: {movie_id}")
+        
+        return {
+            "movie_id": vector.movie_id,
+            "emotion_scores": vector.emotion_scores,
+            "narrative_traits": vector.narrative_traits,
+            "direction_mood": vector.direction_mood,
+            "character_relationship": vector.character_relationship,
+            "ending_preference": vector.ending_preference,
+            "embedding_text": vector.embedding_text,
+            "embedding_vector": vector.embedding_vector,
+            "updated_at": vector.updated_at.isoformat() if vector.updated_at else None
+        }
+    finally:
+        db.close()
+
+
+@app.post("/movies/vectors/batch")
+def get_movie_vectors_batch_endpoint(body: dict) -> dict:
+    """
+    Get multiple movie vectors by movie_ids
+    
+    Request body:
+        - movie_ids: List of movie IDs
+    
+    Returns:
+        Dictionary mapping movie_id to vector data
+    """
+    from db import SessionLocal
+    from repositories.movie_vector import MovieVectorRepository
+    
+    movie_ids = body.get("movie_ids", [])
+    if not movie_ids:
+        raise HTTPException(status_code=400, detail="movie_ids is required")
+    
+    db = SessionLocal()
+    try:
+        repo = MovieVectorRepository(db)
+        vectors = repo.get_by_movie_ids(movie_ids)
+        
+        result = {}
+        for vector in vectors:
+            result[vector.movie_id] = {
+                "emotion_scores": vector.emotion_scores,
+                "narrative_traits": vector.narrative_traits,
+                "direction_mood": vector.direction_mood,
+                "character_relationship": vector.character_relationship,
+                "ending_preference": vector.ending_preference,
+                "embedding_text": vector.embedding_text,
+                "embedding_vector": vector.embedding_vector,
+                "updated_at": vector.updated_at.isoformat() if vector.updated_at else None
+            }
+        
+        return {
+            "total": len(result),
+            "vectors": result
+        }
+    finally:
+        db.close()
 
 
 @app.post("/predict/satisfaction")

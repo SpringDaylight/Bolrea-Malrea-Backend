@@ -55,6 +55,9 @@ def create_review(
     db: Session = Depends(get_db)
 ):
     """Create a new review"""
+    from repositories.user_preference import UserPreferenceRepository
+    from domain.a1_preference import analyze_preference
+    
     repo = ReviewRepository(db)
     
     # Check if user already reviewed this movie
@@ -70,6 +73,47 @@ def create_review(
     
     db_review = repo.create(review_data)
     MovieRepository(db).recalc_avg_rating(db_review.movie_id)
+    
+    # 사용자 선호도 업데이트 (리뷰 기반)
+    try:
+        # 사용자의 모든 리뷰 가져오기
+        user_reviews = repo.get_by_user(user_id, skip=0, limit=100)
+        
+        # 리뷰 내용을 기반으로 선호도 분석
+        review_texts = []
+        for r in user_reviews:
+            if r.content:
+                review_texts.append(r.content)
+        
+        if review_texts:
+            combined_text = " ".join(review_texts[-10:])  # 최근 10개 리뷰만 사용
+            
+            # A-1 API로 선호도 분석
+            user_profile = analyze_preference({
+                "text": combined_text,
+                "dislikes": ""
+            })
+            
+            # UserPreference 테이블에 저장
+            pref_repo = UserPreferenceRepository(db)
+            preference_vector_json = {
+                "emotion_scores": user_profile["emotion_scores"],
+                "narrative_traits": user_profile["narrative_traits"],
+                "direction_mood": user_profile["direction_mood"],
+                "character_relationship": user_profile["character_relationship"],
+                "ending_preference": user_profile["ending_preference"]
+            }
+            
+            pref_repo.upsert(
+                user_id=user_id,
+                preference_vector_json=preference_vector_json,
+                boost_tags=user_profile.get("boost_tags", []),
+                dislike_tags=user_profile.get("dislike_tags", []),
+                penalty_tags=[]
+            )
+    except Exception as e:
+        # 선호도 업데이트 실패는 치명적이지 않으므로 로그만 남김
+        print(f"Failed to update user preference: {e}")
     
     # Refresh to get user relationship
     db.refresh(db_review)
@@ -96,6 +140,9 @@ def update_review(
     db: Session = Depends(get_db)
 ):
     """Update a review"""
+    from repositories.user_preference import UserPreferenceRepository
+    from domain.a1_preference import analyze_preference
+    
     repo = ReviewRepository(db)
     
     review_data = review.model_dump(exclude_unset=True)
@@ -105,6 +152,44 @@ def update_review(
         raise HTTPException(status_code=404, detail="Review not found")
     
     MovieRepository(db).recalc_avg_rating(db_review.movie_id)
+    
+    # 사용자 선호도 업데이트 (리뷰 기반)
+    try:
+        user_id = db_review.user_id
+        user_reviews = repo.get_by_user(user_id, skip=0, limit=100)
+        
+        review_texts = []
+        for r in user_reviews:
+            if r.content:
+                review_texts.append(r.content)
+        
+        if review_texts:
+            combined_text = " ".join(review_texts[-10:])
+            
+            user_profile = analyze_preference({
+                "text": combined_text,
+                "dislikes": ""
+            })
+            
+            pref_repo = UserPreferenceRepository(db)
+            preference_vector_json = {
+                "emotion_scores": user_profile["emotion_scores"],
+                "narrative_traits": user_profile["narrative_traits"],
+                "direction_mood": user_profile["direction_mood"],
+                "character_relationship": user_profile["character_relationship"],
+                "ending_preference": user_profile["ending_preference"]
+            }
+            
+            pref_repo.upsert(
+                user_id=user_id,
+                preference_vector_json=preference_vector_json,
+                boost_tags=user_profile.get("boost_tags", []),
+                dislike_tags=user_profile.get("dislike_tags", []),
+                penalty_tags=[]
+            )
+    except Exception as e:
+        print(f"Failed to update user preference: {e}")
+    
     result = repo.get_with_counts(review_id)
     
     review_obj = result["review"]

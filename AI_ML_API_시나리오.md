@@ -7,6 +7,43 @@
 
 ---
 
+## 프론트 UI → API 호출 매핑 (현재 백엔드 기준)
+> 프론트엔드 코드가 이 저장소에 없어서 **버튼/화면 명칭은 추정**입니다.  
+> 실제 화면명은 프론트 구현과 맞춰 교체하면 됩니다.
+
+| 화면/버튼(추정) | 호출 API | 후속/의존 | 비고 |
+| --- | --- | --- | --- |
+| 취향 분석하기 | `POST /analyze/preference` | 없음 | A-1 결과를 프론트가 보관 |
+| 영화 벡터화(관리/백오피스) | `POST /movie/vector` | 없음 | A-2 결과를 프론트가 보관 |
+| 만족도 계산 | `POST /predict/satisfaction` | A-1, A-2 결과 필요 | A-3 |
+| 추천 설명 보기 | `POST /explain/prediction` | A-3 결과 필요 | A-4 |
+| 감성 검색 | `POST /search/emotional` | 검색 엔진 호출은 별도 | A-5는 쿼리만 반환 |
+| 그룹 추천 시뮬레이션 | `POST /group/simulate` | 구성원 프로필 필요 | A-6 |
+| 취향 지도 보기 | `POST /map/taste` | 없음 | A-7 |
+| 감정 칵테일 생성 | `POST /api/cocktail` | 없음 | Bedrock 사용 |
+| 리뷰 작성(게이미피케이션) | `POST /api/review` | 없음 | DEMO 사용자 고정 |
+| 홈 화면 | `GET /api/home` | 없음 | 레벨/팝콘/질문 |
+| 밥주기 룰렛 | `POST /api/feeding` | 없음 | 하루 1회 제한 |
+| 오늘의 질문 답변 | `POST /api/question/answer` | 없음 | 질문 히스토리 갱신 |
+| 질문 히스토리 | `GET /api/history` | 없음 | |
+| 상점 보기 | `GET /api/shop` | 없음 | |
+| 테마 구매 | `POST /api/shop/buy` | 팝콘 보유 | |
+| 테마 적용 | `POST /api/shop/apply` | 보유 테마 필요 | |
+| 인벤토리 조회 | `GET /api/inventory` | 없음 | |
+| 그룹 추천(게이미피케이션) | `POST /api/group/recommend` | 별도 입력 포맷 | A-6과 유사 목적 |
+
+추가로 일반 콘텐츠 화면(영화/리뷰 리스트)은 다음 API가 사용됩니다.
+| 화면/버튼(추정) | 호출 API | 비고 |
+| --- | --- | --- |
+| 영화 리스트 | `GET /api/movies` | 검색/장르/정렬 파라미터 |
+| 영화 상세 | `GET /api/movies/{movie_id}` | |
+| 영화 리뷰 리스트 | `GET /api/movies/{movie_id}/reviews` | |
+| 리뷰 CRUD | `POST/PUT/DELETE /api/reviews` | |
+| 리뷰 좋아요/싫어요 | `POST /api/reviews/{review_id}/likes` | |
+| 리뷰 댓글 CRUD | `/api/reviews/{review_id}/comments` | |
+
+---
+
 ## A-1 ~ A-7 (app.py에 직접 연결된 ML 엔드포인트)
 
 ### 시나리오 A-1. 사용자 취향 분석
@@ -303,3 +340,41 @@
 
 - A-1 ~ A-7은 현재 **LLM 호출 없이 deterministic 점수 기반**으로 구현되어 있습니다.  
   (LLM 기반 고정밀 분석은 `ai/analysis/*` 모듈에 구현되어 있음)
+
+---
+
+## DB 저장 구조 (사용자 선호도 / 영화 특성)
+아래는 **모델 기준**으로 “어떤 형태로 저장되도록 설계되어 있는지”입니다.  
+현재 코드에는 **해당 테이블에 실제로 저장하는 로직이 없습니다**(조회/업데이트 코드 미구현).
+
+### 사용자 선호도 저장 구조
+테이블: `user_preferences` (모델: `UserPreference`, `models.py`)
+- `user_id`: 사용자 ID (users.id FK)
+- `preference_vector_json`: 감정/서사/결말 벡터(JSONB)
+- `boost_tags`: 좋아하는 태그 리스트(JSONB)
+- `dislike_tags`: 제외/비선호 태그 리스트(JSONB)
+- `penalty_tags`: 싫어하는 태그 리스트(JSONB)
+- `persona_code`: 페르소나 코드(선택)
+- `updated_at`: 갱신 시간
+
+현재 구현 상태:
+- A-1 결과는 **응답으로만 반환**되고 DB 저장 없음
+- 게이미피케이션 설문(`ai/gamification/survey.py`)은 **DB가 아닌 `user_preferences.json` 파일**에 저장
+
+### 영화 특성 저장 구조
+테이블: `movie_vectors` (모델: `MovieVector`, `models.py`)
+- `movie_id`: 영화 ID (movies.id FK)
+- `emotion_scores`, `narrative_traits`, `direction_mood`, `character_relationship`: 태그 점수(JSONB)
+- `ending_preference`: 결말 선호(JSONB)
+- `embedding_text`: 임베딩용 텍스트
+- `embedding_vector`: 임베딩 벡터(JSONB)
+- `updated_at`: 갱신 시간
+
+현재 구현 상태:
+- A-2 결과는 **응답으로만 반환**되고 DB 저장 없음
+- 실제 영화 메타데이터/태그는 `movies`, `movie_genres`, `movie_tags` 테이블에 저장됨
+
+### 기타 관련 테이블
+- `taste_analysis`: 사용자 선호 요약 텍스트 (LLM 생성용, 현재 미사용)
+- `reviews`, `review_likes`, `comments`: 리뷰/피드백 데이터
+- 게이미피케이션 관련: `users`의 레벨/팝콘 필드 + `flavor_stats`, `theme_inventory`, `question_history`

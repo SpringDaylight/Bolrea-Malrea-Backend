@@ -4,7 +4,7 @@ Endpoints for saving and retrieving user taste preferences
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from db import get_db
 from repositories.user_preference import UserPreferenceRepository
@@ -26,7 +26,7 @@ class SaveUserPreferenceRequest(BaseModel):
         ...,
         description="Preference vector containing emotion_scores, narrative_traits, direction_mood, character_relationship, ending_preference"
     )
-    persona_code: str = Field(None, description="User persona code")
+    persona_code: Optional[str] = Field(None, description="User persona code")
     boost_tags: List[str] = Field(default_factory=list, description="List of liked tags")
     dislike_tags: List[str] = Field(default_factory=list, description="List of disliked tags")
     penalty_tags: List[str] = Field(default_factory=list, description="List of penalty tags")

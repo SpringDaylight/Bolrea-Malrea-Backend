@@ -157,6 +157,7 @@ def update_preference_from_review(
     user_id: str,
     movie_id: int = Query(..., description="Movie ID"),
     rating: float = Query(..., ge=0.5, le=5.0, description="Rating (0.5~5.0)"),
+    review_text: Optional[str] = Query(None, description="Review text (optional)"),
     learning_rate: float = Query(0.15, ge=0.01, le=0.5, description="Learning rate (0.01~0.5)"),
     db: Session = Depends(get_db)
 ):
@@ -169,6 +170,7 @@ def update_preference_from_review(
     - user_id: User ID
     - movie_id: Movie ID
     - rating: Review rating (0.5~5.0)
+    - review_text: Review text (optional, for movie vector update)
     - learning_rate: How much to adjust preference (default: 0.15)
     
     Returns:
@@ -183,6 +185,7 @@ def update_preference_from_review(
         user_id=user_id,
         movie_id=movie_id,
         rating=rating,
+        review_text=review_text,
         learning_rate=learning_rate
     )
     

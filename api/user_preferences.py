@@ -150,3 +150,46 @@ def check_user_preference_exists(
         "user_id": user_id,
         "exists": exists
     }
+
+
+@router.post("/{user_id}/update-from-review", response_model=dict)
+def update_preference_from_review(
+    user_id: str,
+    movie_id: int = Query(..., description="Movie ID"),
+    rating: float = Query(..., ge=0.5, le=5.0, description="Rating (0.5~5.0)"),
+    learning_rate: float = Query(0.15, ge=0.01, le=0.5, description="Learning rate (0.01~0.5)"),
+    db: Session = Depends(get_db)
+):
+    """
+    Update user preference based on review
+    
+    리뷰 작성 시 자동으로 호출되어 사용자 취향을 업데이트합니다.
+    
+    Parameters:
+    - user_id: User ID
+    - movie_id: Movie ID
+    - rating: Review rating (0.5~5.0)
+    - learning_rate: How much to adjust preference (default: 0.15)
+    
+    Returns:
+    - success: Whether update was successful
+    - message: Status message
+    - updated_at: Timestamp of update
+    """
+    from services.preference_updater import PreferenceUpdater
+    
+    updater = PreferenceUpdater(db)
+    result = updater.update_from_review(
+        user_id=user_id,
+        movie_id=movie_id,
+        rating=rating,
+        learning_rate=learning_rate
+    )
+    
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=400,
+            detail=result.get("message", "Failed to update preference")
+        )
+    
+    return result

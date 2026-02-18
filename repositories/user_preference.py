@@ -23,7 +23,7 @@ class UserPreferenceRepository(BaseRepository[UserPreference]):
         self,
         user_id: str,
         preference_vector_json: dict,
-        persona_code: Optional[str] = None,
+        persona_code: str = None,
         boost_tags: list = None,
         dislike_tags: list = None,
         penalty_tags: list = None
@@ -33,9 +33,9 @@ class UserPreferenceRepository(BaseRepository[UserPreference]):
         
         Args:
             user_id: User ID
-            preference_vector_json: Dict containing emotion_scores, narrative_traits, etc.
-            persona_code: User persona code (optional)
-            boost_tags: List of preferred tags
+            preference_vector_json: Preference vector containing emotion_scores, narrative_traits, etc.
+            persona_code: User persona code
+            boost_tags: List of liked tags
             dislike_tags: List of disliked tags
             penalty_tags: List of penalty tags
         
@@ -80,3 +80,7 @@ class UserPreferenceRepository(BaseRepository[UserPreference]):
         self.db.delete(preference)
         self.db.commit()
         return True
+    
+    def exists(self, user_id: str) -> bool:
+        """Check if user preference exists"""
+        return self.db.query(UserPreference).filter(UserPreference.user_id == user_id).count() > 0

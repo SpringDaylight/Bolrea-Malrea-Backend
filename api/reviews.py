@@ -12,6 +12,7 @@ from schemas import (
 )
 from repositories.review import ReviewRepository
 from repositories.movie import MovieRepository
+from repositories.watched import WatchedMovieRepository
 
 router = APIRouter(prefix="/api/reviews", tags=["reviews"])
 
@@ -73,6 +74,10 @@ def create_review(
     
     db_review = repo.create(review_data)
     MovieRepository(db).recalc_avg_rating(db_review.movie_id)
+    # Ensure watched_movies has this movie for the user
+    watched_repo = WatchedMovieRepository(db)
+    if not watched_repo.get(user_id, db_review.movie_id):
+        watched_repo.create(user_id, db_review.movie_id)
     
     # 사용자 선호도 업데이트 (리뷰 기반)
     try:

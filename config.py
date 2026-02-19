@@ -46,35 +46,40 @@ def get_rds_password() -> str:
     Returns:
         str: Database password
     """
+    # First check for local password (for development)
+    local_password = os.getenv("RDS_PASSWORD")
+    if local_password:
+        print("Using RDS_PASSWORD from environment variable")
+        return local_password
+    
+    # Try Secrets Manager
     try:
-        # Use boto3 with IRSA (IAM Role for Service Account)
-        # No AWS credentials needed - uses Pod's IAM role
+        print(f"Attempting to retrieve password from Secrets Manager: {RDS_SECRET_ARN}")
         client = boto3.client('secretsmanager', region_name=AWS_REGION)
         response = client.get_secret_value(SecretId=RDS_SECRET_ARN)
         secret = json.loads(response['SecretString'])
+        print("Successfully retrieved password from Secrets Manager")
         return secret['password']
     except Exception as e:
-        print(f"Failed to get password from Secrets Manager: {e}")
-        
-        # Fallback for local development only
-        local_password = os.getenv("RDS_PASSWORD")
-        if local_password:
-            print("Using local RDS_PASSWORD from environment")
-            return local_password
-        
-        raise RuntimeError(f"Could not retrieve RDS password: {e}")
+        print(f"ERROR: Failed to get password from Secrets Manager: {e}")
+        print(f"Secret ARN: {RDS_SECRET_ARN}")
+        print(f"AWS Region: {AWS_REGION}")
+        raise RuntimeError(f"Could not retrieve RDS password. Check IRSA permissions and Secret ARN: {e}")
 
 
 def get_database_url() -> str:
     """
-    Construct database URL with password from Secrets Manager
+    Construct database URL with password from environment or Secrets Manager
     
     Returns:
         str: SQLAlchemy database URL
     """
+    from urllib.parse import quote_plus
+    
     # Check if DATABASE_URL is explicitly set (for local override)
     database_url = os.getenv("DATABASE_URL")
     if database_url:
+        print("Using DATABASE_URL from environment")
         return database_url
 
     # Local fallback without AWS dependencies
@@ -84,9 +89,19 @@ def get_database_url() -> str:
             "postgresql+psycopg://movie_user:password@localhost:5432/movie_local",
         )
     
-    # Get password from Secrets Manager
-    password = get_rds_password()
+    # Try to get password from environment first (Kubernetes Secret)
+    password = os.getenv("RDS_PASSWORD")
+    if password:
+        print("Using RDS_PASSWORD from environment (Kubernetes Secret)")
+    else:
+        # Fall back to Secrets Manager
+        print("RDS_PASSWORD not found in environment, trying Secrets Manager")
+        password = get_rds_password()
+    
+    # URL encode the password to handle special characters
+    encoded_password = quote_plus(password)
     
     # Construct PostgreSQL URL
-    # Format: postgresql://user:password@host:port/database
-    return f"postgresql://{RDS_USER}:{password}@{RDS_HOST}:{RDS_PORT}/{RDS_DATABASE}"
+    db_url = f"postgresql://{RDS_USER}:{encoded_password}@{RDS_HOST}:{RDS_PORT}/{RDS_DATABASE}"
+    print(f"Database URL constructed: postgresql://{RDS_USER}:***@{RDS_HOST}:{RDS_PORT}/{RDS_DATABASE}")
+    return db_url

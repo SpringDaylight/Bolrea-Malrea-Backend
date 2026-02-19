@@ -25,7 +25,12 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 프로덕션에서는 특정 도메인으로 제한
+    allow_origins=[
+        "http://localhost:5173",  # 로컬 개발
+        "http://localhost:3000",  # 로컬 개발 (대체 포트)
+        "http://bolrae-malrae-frontend.s3-website.ap-northeast-2.amazonaws.com",  # S3 프로덕션
+        # 추가 도메인이 있으면 여기에 추가
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

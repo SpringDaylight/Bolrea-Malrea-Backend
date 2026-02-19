@@ -72,6 +72,13 @@ class UserLoginRequest(BaseSchema):
     password: str
 
 
+class PasswordChangeRequest(BaseSchema):
+    user_id: str
+    current_password: str
+    new_password: str
+    new_password_confirm: str
+
+
 # ============================================
 # Movie Schemas
 # ============================================

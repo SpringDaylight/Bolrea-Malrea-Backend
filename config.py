@@ -98,10 +98,18 @@ def get_database_url() -> str:
         print("RDS_PASSWORD not found in environment, trying Secrets Manager")
         password = get_rds_password()
     
+    # DEBUG: Print password info (REMOVE IN PRODUCTION)
+    print("=" * 80)
+    print("DEBUG: Database Connection Info")
+    print("=" * 80)
+    print("RAW PASSWORD:", password)
+    print("ENCODED PASSWORD:", quote_plus(password))
+    print("=" * 80)
+    
     # URL encode the password to handle special characters
     encoded_password = quote_plus(password)
     
     # Construct PostgreSQL URL
     db_url = f"postgresql://{RDS_USER}:{encoded_password}@{RDS_HOST}:{RDS_PORT}/{RDS_DATABASE}"
-    print(f"Database URL constructed: postgresql://{RDS_USER}:***@{RDS_HOST}:{RDS_PORT}/{RDS_DATABASE}")
+    print(f"DATABASE_URL: postgresql://{RDS_USER}:***@{RDS_HOST}:{RDS_PORT}/{RDS_DATABASE}")
     return db_url

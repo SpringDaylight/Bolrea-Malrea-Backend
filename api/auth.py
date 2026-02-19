@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from db import get_db
 from config import KAKAO_CLIENT_ID, KAKAO_CLIENT_SECRET, KAKAO_REDIRECT_URI
-from schemas import UserResponse, MessageResponse, UserSignupRequest, UserLoginRequest
+from schemas import UserResponse, MessageResponse, UserSignupRequest, UserLoginRequest, PasswordChangeRequest
 from repositories.user import UserRepository
 from repositories.user_auth import UserAuthRepository
 from models import User
@@ -298,6 +298,31 @@ def login(payload: UserLoginRequest, db: Session = Depends(get_db)):
         avatar_text=user.avatar_text,
         created_at=user.created_at,
     )
+
+
+@router.post("/password", response_model=MessageResponse)
+def change_password(payload: PasswordChangeRequest, db: Session = Depends(get_db)):
+    """Change password for a local user"""
+    user_repo = UserRepository(db)
+    user = user_repo.get_by_user_id(payload.user_id)
+
+    if not user or not user.password_hash:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+    if payload.new_password != payload.new_password_confirm:
+        raise HTTPException(status_code=400, detail="Password confirmation does not match")
+
+    if not validate_password_policy(payload.new_password):
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be 8-20 chars and include at least 2 of: uppercase, lowercase, number, special"
+        )
+
+    user_repo.update(user.id, {"password_hash": hash_password(payload.new_password)})
+    return MessageResponse(message="Password updated successfully")
 
 
 @router.post("/logout")

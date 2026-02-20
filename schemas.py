@@ -223,6 +223,8 @@ class CommentResponse(CommentBase):
     user_id: str
     user_nickname: Optional[str] = None
     created_at: datetime
+    likes_count: int = 0
+    dislikes_count: int = 0
 
 
 # ============================================
@@ -309,6 +311,13 @@ class MessageResponse(BaseSchema):
 class LikeToggleResponse(BaseSchema):
     message: str
     review_id: int
+    likes_count: int
+    dislikes_count: int
+
+
+class CommentLikeToggleResponse(BaseSchema):
+    message: str
+    comment_id: int
     likes_count: int
     dislikes_count: int
 

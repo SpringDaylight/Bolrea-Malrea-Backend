@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 from db import get_db
 from schemas import (
     ReviewResponse, ReviewListResponse, ReviewCreate, ReviewUpdate,
-    CommentResponse, CommentCreate, CommentUpdate, MessageResponse, LikeToggleResponse
+    CommentResponse, CommentCreate, CommentUpdate, MessageResponse, LikeToggleResponse,
+    CommentLikeToggleResponse
 )
 from repositories.review import ReviewRepository
 from repositories.movie import MovieRepository
@@ -289,7 +290,9 @@ def get_comments(
             user_id=comment.user_id,
             user_nickname=comment.user.nickname if comment.user else None,
             content=comment.content,
-            created_at=comment.created_at
+            created_at=comment.created_at,
+            likes_count=comment.likes_count,
+            dislikes_count=comment.dislikes_count
         )
         for comment in comments
     ]
@@ -332,7 +335,9 @@ def create_comment(
         user_id=db_comment.user_id,
         user_nickname=db_comment.user.nickname if db_comment.user else None,
         content=db_comment.content,
-        created_at=db_comment.created_at
+        created_at=db_comment.created_at,
+        likes_count=db_comment.likes_count,
+        dislikes_count=db_comment.dislikes_count
     )
 
 
@@ -366,7 +371,9 @@ def update_comment(
         user_id=db_comment.user_id,
         user_nickname=db_comment.user.nickname if db_comment.user else None,
         content=db_comment.content,
-        created_at=db_comment.created_at
+        created_at=db_comment.created_at,
+        likes_count=db_comment.likes_count,
+        dislikes_count=db_comment.dislikes_count
     )
 
 
@@ -390,3 +397,43 @@ def delete_comment(
         raise HTTPException(status_code=404, detail="Comment not found")
 
     return MessageResponse(message="Comment deleted successfully")
+
+
+@router.post("/comments/{comment_id}/likes", response_model=CommentLikeToggleResponse)
+def toggle_comment_like(
+    comment_id: int,
+    user_id: str = Query(..., description="User ID"),
+    is_like: bool = Query(True, description="True for like, False for dislike"),
+    db: Session = Depends(get_db)
+):
+    """Toggle like/dislike on a comment"""
+    repo = ReviewRepository(db)
+
+    comment = repo.get_comment(comment_id)
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    review = repo.get(comment.review_id)
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+
+    if not review.is_public and review.user_id != user_id:
+        raise HTTPException(status_code=404, detail="Review not found")
+
+    if not comment.is_public and comment.user_id != user_id and review.user_id != user_id:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    if not repo.toggle_comment_like(comment_id, user_id, is_like):
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    action = "liked" if is_like else "disliked"
+    updated = repo.get_comment(comment_id)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    return CommentLikeToggleResponse(
+        message=f"Comment {action} successfully",
+        comment_id=comment_id,
+        likes_count=updated.likes_count,
+        dislikes_count=updated.dislikes_count,
+    )

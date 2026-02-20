@@ -150,6 +150,7 @@ class MovieResponse(MovieBase):
     avg_rating: Optional[Decimal] = None
     genres: List[str] = []
     tags: List[str] = []
+    reviews_count: int = 0
 
 
 

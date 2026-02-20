@@ -54,7 +54,7 @@ def get_movies(
     
     # Convert to response format
     movie_responses = []
-    for movie in movies:
+    for movie, reviews_count in movies:
         movie_dict = {
             "id": movie.id,
             "title": movie.title,
@@ -65,7 +65,8 @@ def get_movies(
             "avg_rating": movie.avg_rating,
             "created_at": movie.created_at,
             "genres": [g.genre for g in movie.genres],
-            "tags": [t.tag for t in movie.tags]
+            "tags": [t.tag for t in movie.tags],
+            "reviews_count": reviews_count
         }
         movie_responses.append(MovieResponse(**movie_dict))
     

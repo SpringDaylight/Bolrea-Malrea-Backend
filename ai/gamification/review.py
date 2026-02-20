@@ -1,10 +1,14 @@
 
+from datetime import date
 from typing import Optional, Dict
 # from database import db
-from models import FlavorStat, User # Added User explicit import if needed, or rely on core
+from models import FlavorStat, User, QuestionHistory # Added User explicit import if needed, or rely on core
 from .core import FLAVORS
 from ai.analysis import sentiment
 from ai.analysis import embedding
+
+REVIEW_DAILY_REWARD_LIMIT = 3
+REVIEW_REWARD_TRACKING_QUESTION = "__review_reward_tracking__"
 
 class ReviewMixin:
     
@@ -14,49 +18,80 @@ class ReviewMixin:
             self.bedrock_client = embedding.get_bedrock_client()
         return self.bedrock_client
 
+
     def add_review(self, review_text: str, is_detailed: bool = False) -> Dict:
         """리뷰 작성 시 보상 및 맛 분석 (LLM 사용)"""
         print(f"Adding review: '{review_text}' (Length: {len(review_text)})")
+
+        # Legacy logic (before daily reward limit)
+        # if is_detailed and len(review_text) >= 50:
+        #     exp_gain = 30
+        #     popcorn_gain = 12
+        #     reward_type = "detailed"
+        # else:
+        #     exp_gain = 5
+        #     popcorn_gain = 3
+        #     reward_type = "simple"
+        # self.add_exp(exp_gain)
+        # self.add_popcorn(popcorn_gain)
+
+        user = self._get_user_model()
+        today = date.today().isoformat()
+        today_reward_count = (
+            self.db.query(QuestionHistory)
+            .filter_by(
+                user_id=user.id,
+                date=today,
+                question=REVIEW_REWARD_TRACKING_QUESTION
+            )
+            .count()
+        )
+        can_get_reward = today_reward_count < REVIEW_DAILY_REWARD_LIMIT
+
         # 1. 보상
         if is_detailed and len(review_text) >= 50:
-            exp_gain = 30
-            popcorn_gain = 12
+            base_exp_gain = 30
+            base_popcorn_gain = 12
             reward_type = "detailed"
         else:
-            exp_gain = 5
-            popcorn_gain = 3
+            base_exp_gain = 5
+            base_popcorn_gain = 3
             reward_type = "simple"
-            
+
+        exp_gain = base_exp_gain if can_get_reward else 0
+        popcorn_gain = base_popcorn_gain if can_get_reward else 0
+
         # Core 메소드 활용 (DB 커밋 포함됨 - add_exp, add_popcorn)
-        self.add_exp(exp_gain)
-        self.add_popcorn(popcorn_gain)
-        
+        if can_get_reward:
+            self.add_exp(exp_gain)
+            self.add_popcorn(popcorn_gain)
+            self.db.add(
+                QuestionHistory(
+                    user_id=user.id,
+                    date=today,
+                    question=REVIEW_REWARD_TRACKING_QUESTION,
+                    answer=reward_type
+                )
+            )
+
         # 2. 맛 분석 (LLM)
         flavor_result = self._analyze_flavor_with_llm(review_text)
         flavor_name = FLAVORS[flavor_result]['name']
-        
+
         # 3. 사용자 데이터 갱신 (DB)
-        user = self._get_user_model()
-        
         # 해당 맛 스탯 업데이트
-        # Flask: FlavorStat.query.filter_by(user_id=user.id, flavor_name=flavor_result).first()
-        # FastAPI: self.db.query(FlavorStat).filter_by(user_id=user.id, flavor_name=flavor_result).first()
         start_q = self.db.query(FlavorStat).filter_by(user_id=user.id, flavor_name=flavor_result)
         stat = start_q.first()
-        
+
         if stat:
             stat.score += 1
         else:
-            # 혹시 없으면 생성 (초기화 시 생성되지만 안전장치)
+            # 없으면 생성
             stat = FlavorStat(user_id=user.id, flavor_name=flavor_result, score=1)
             self.db.add(stat)
-            
 
-        # 메인 맛 갱신 로직 제거 (사용자 요구사항: 성격 변화 기능 미사용)
-        # 3. 사용자 데이터 갱신 (DB) - 맛 스탯만 업데이트하고 메인 맛은 변경하지 않음
-        
         self.db.commit()
-        
+
         return {
             "success": True,
             "reward": {
@@ -64,13 +99,24 @@ class ReviewMixin:
                 "exp": exp_gain,
                 "popcorn": popcorn_gain
             },
+            "daily_reward": {
+                "count": today_reward_count + (1 if can_get_reward else 0),
+                "limit": REVIEW_DAILY_REWARD_LIMIT,
+                "rewarded": can_get_reward
+            },
             "analysis": {
                 "flavor": flavor_result,
                 "flavor_name": flavor_name,
                 "main_flavor": user.main_flavor,
                 "main_flavor_name": FLAVORS[user.main_flavor]['name']
             },
-            "message": f"{flavor_name} 팝콘 획득! (EXP +{exp_gain}, 팝콘 +{popcorn_gain})"
+            # Legacy response message:
+            # "message": f"{flavor_name} 팝콘 획득! (EXP +{exp_gain}, 팝콘 +{popcorn_gain})"
+            "message": (
+                f"{flavor_name} 팝콘 획득! (EXP +{exp_gain}, 팝콘 +{popcorn_gain})"
+                if can_get_reward
+                else f"{flavor_name} 분석 완료! 오늘 리뷰 보상은 {REVIEW_DAILY_REWARD_LIMIT}회까지만 가능합니다."
+            )
         }
 
     def _analyze_flavor_with_llm(self, text: str) -> str:

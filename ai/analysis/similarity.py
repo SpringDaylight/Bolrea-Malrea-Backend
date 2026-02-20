@@ -241,6 +241,65 @@ def compute_score(user_profile: Dict, movie_profile: Dict, dislikes: List[str], 
 # 각 영화와 비교 (compute_score 호출)
 # 매칭률 기준 정렬 (높은 순)
 # 상위 N개 출력
+# 다양성 필터 (Diversity Filter) - 연속된 같은 감정 방지
+def apply_diversity_filter(scored_list: List[Dict], limit: int = 10) -> List[Dict]:
+    """
+    상위 랭킹 영화들이 특정 감정에만 쏠리지 않도록 순서를 재조정합니다.
+    (예: 로맨스가 3번 연속 나오면 다른 장르를 끼워넣음)
+    """
+    if not scored_list:
+        return []
+
+    final_list = []
+    used_indices = set()
+    recent_emotions = [] 
+    
+    # 원본 리스트 복사본에서 작업
+    candidates = scored_list.copy()
+    
+    while len(final_list) < limit and len(final_list) < len(scored_list):
+        best_candidate = None
+        best_idx = -1
+        
+        # 후보군 탐색
+        for i, item in enumerate(scored_list):
+            if i in used_indices:
+                continue
+                
+            top_factors = item['breakdown'].get('top_factors', [])
+            current_emotion = top_factors[0] if top_factors else "Unknown"
+            
+            # 다양성 체크: 최근 2개가 같은 감정이고, 얘도 그 감정이면 Skip
+            if len(recent_emotions) >= 2 and \
+               recent_emotions[-1] == current_emotion and \
+               recent_emotions[-2] == current_emotion:
+                continue
+            
+            best_candidate = item
+            best_idx = i
+            break
+        
+        # 조건 때문에 선택된 게 없다면 (모두 다 같은 감정이면), 그냥 남은 것 중 1등 선택
+        if best_candidate is None:
+            for i, item in enumerate(scored_list):
+                if i not in used_indices:
+                    best_candidate = item
+                    best_idx = i
+                    break
+        
+        if best_candidate:
+            final_list.append(best_candidate)
+            used_indices.add(best_idx)
+            
+            top_factors = best_candidate['breakdown'].get('top_factors', [])
+            flavor = top_factors[0] if top_factors else "Unknown"
+            recent_emotions.append(flavor)
+            if len(recent_emotions) > 2:
+                recent_emotions.pop(0)
+    
+    return final_list
+
+
 def main():
     parser = argparse.ArgumentParser(description='A-3 Taste Simulator (Cosine + Penalty + Sigmoid)')
     parser.add_argument('--movies', default='movies_dataset_final.json')
@@ -290,7 +349,10 @@ def main():
 
     scored.sort(key=lambda x: x['satisfaction_probability'], reverse=True)
 
-    print(json.dumps(scored[: args.limit], ensure_ascii=False, indent=2))
+    # 다양성 필터 적용 (Diversity Filter)
+    final_list = apply_diversity_filter(scored, args.limit)
+
+    print(json.dumps(final_list, ensure_ascii=False, indent=2))
 
 
 if __name__ == '__main__':

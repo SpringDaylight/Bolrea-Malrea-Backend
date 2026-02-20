@@ -90,6 +90,34 @@ class DailyQuestionAnswerRequest(BaseSchema):
     answer: str
 
 
+class RouletteStatusResponse(BaseSchema):
+    can_spin: bool
+    next_available_at: Optional[str] = None
+
+
+class RouletteSpinRequest(BaseSchema):
+    user_id: str
+
+
+class RouletteSpinResponse(BaseSchema):
+    item: str
+    popcorn_gain: int
+    exp_gain: int
+    total_popcorn: int
+    total_exp: int
+
+
+class RouletteConfigItem(BaseSchema):
+    label: str
+    probability: str
+    popcorn_gain: int
+    exp_gain: int
+
+
+class RouletteConfigResponse(BaseSchema):
+    items: List[RouletteConfigItem]
+
+
 # ============================================
 # Movie Schemas
 # ============================================

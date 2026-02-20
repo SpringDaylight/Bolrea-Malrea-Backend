@@ -38,6 +38,7 @@ class User(Base):
     last_feeding_date = Column(String, nullable=True) # YYYY-MM-DD
     last_question_date = Column(String, nullable=True) # YYYY-MM-DD
     current_question_index = Column(Integer, default=0)
+    last_roulette_date = Column(String, nullable=True) # YYYY-MM-DD
 
     # Relationships
     reviews = relationship("Review", back_populates="user", cascade="all, delete-orphan")
@@ -53,6 +54,7 @@ class User(Base):
     inventory = relationship("ThemeInventory", back_populates="user", cascade="all, delete-orphan")
     history = relationship("QuestionHistory", back_populates="user", cascade="all, delete-orphan")
     auth_accounts = relationship("UserAuth", back_populates="user", cascade="all, delete-orphan")
+    roulette_rewards = relationship("RouletteReward", back_populates="user", cascade="all, delete-orphan")
 
 
 class UserAuth(Base):
@@ -343,4 +345,22 @@ class WatchedMovie(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "movie_id", name="uq_user_movie_watched"),
         Index("ix_watched_movies_user_movie", "user_id", "movie_id"),
+    )
+
+
+class RouletteReward(Base):
+    """Daily roulette rewards"""
+    __tablename__ = "roulette_rewards"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    item = Column(String, nullable=False)
+    popcorn_gain = Column(Integer, nullable=False, default=0)
+    exp_gain = Column(Integer, nullable=False, default=0)
+    rewarded_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="roulette_rewards")
+
+    __table_args__ = (
+        Index("ix_roulette_rewards_user_rewarded", "user_id", "rewarded_at"),
     )

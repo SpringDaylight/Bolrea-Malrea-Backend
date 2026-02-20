@@ -43,6 +43,7 @@ class User(Base):
     # Relationships
     reviews = relationship("Review", back_populates="user", cascade="all, delete-orphan")
     review_likes = relationship("ReviewLike", back_populates="user", cascade="all, delete-orphan")
+    comment_likes = relationship("CommentLike", back_populates="user", cascade="all, delete-orphan")
     comments = relationship("Comment", back_populates="user", cascade="all, delete-orphan")
     taste_analysis = relationship("TasteAnalysis", back_populates="user", uselist=False, cascade="all, delete-orphan")
     group_decisions = relationship("GroupDecision", back_populates="owner", cascade="all, delete-orphan")
@@ -182,11 +183,14 @@ class Comment(Base):
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     content = Column(Text, nullable=False)
     is_public = Column(Boolean, nullable=False, default=True, comment="True=공개, False=비공개")
+    likes_count = Column(Integer, nullable=False, default=0, comment="좋아요 총합 캐시")
+    dislikes_count = Column(Integer, nullable=False, default=0, comment="싫어요 총합 캐시")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # Relationships
     review = relationship("Review", back_populates="comments")
     user = relationship("User", back_populates="comments")
+    likes = relationship("CommentLike", back_populates="comment", cascade="all, delete-orphan")
     parent = relationship("Comment", remote_side=[id], backref="replies")
 
 
@@ -206,6 +210,24 @@ class ReviewLike(Base):
 
     __table_args__ = (
         UniqueConstraint('review_id', 'user_id', name='uq_review_user_like'),
+    )
+
+
+class CommentLike(Base):
+    """사용자 댓글 좋아요"""
+    __tablename__ = "comment_likes"
+
+    id = Column(Integer, primary_key=True)
+    comment_id = Column(Integer, ForeignKey("comments.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    is_like = Column(Boolean, nullable=False, default=True, comment="True=좋아요, False=싫어요")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    comment = relationship("Comment", back_populates="likes")
+    user = relationship("User", back_populates="comment_likes")
+
+    __table_args__ = (
+        UniqueConstraint("comment_id", "user_id", name="uq_comment_user_like"),
     )
 
 

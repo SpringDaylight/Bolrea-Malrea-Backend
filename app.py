@@ -4,7 +4,7 @@ Main FastAPI application
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from api import movies, reviews, users, auth, gamification, cocktail, user_preferences
+from api import movies, reviews, users, auth, gamification, cocktail, user_preferences, questions
 from utils.validator import validate_request
 
 from domain.a1_preference import analyze_preference
@@ -44,6 +44,7 @@ app.include_router(auth.router)
 app.include_router(gamification.router)
 app.include_router(cocktail.router)
 app.include_router(user_preferences.router)
+app.include_router(questions.router)
 
 
 @app.get("/")

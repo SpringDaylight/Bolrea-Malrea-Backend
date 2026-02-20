@@ -4,7 +4,7 @@ Main FastAPI application
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from api import movies, reviews, users, auth, gamification, cocktail, user_preferences, questions
+from api import movies, reviews, users, auth, gamification, cocktail, user_preferences, questions, roulette
 from utils.validator import validate_request
 
 from domain.a1_preference import analyze_preference
@@ -19,7 +19,7 @@ from domain.a7_taste_map import build_taste_map
 app = FastAPI(
     title="Movie Recommendation API",
     description="정서·서사 기반 영화 취향 시뮬레이션 & 감성 검색 서비스",
-    version="1.1.4"
+    version="1.1.5"
 )
 
 # CORS middleware
@@ -45,6 +45,7 @@ app.include_router(gamification.router)
 app.include_router(cocktail.router)
 app.include_router(user_preferences.router)
 app.include_router(questions.router)
+app.include_router(roulette.router)
 
 
 @app.get("/")

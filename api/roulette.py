@@ -63,9 +63,10 @@ def get_roulette_status(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    today_str = date.today().isoformat()
-    if user.last_roulette_date == today_str:
-        return RouletteStatusResponse(can_spin=False, next_available_at=today_str)
+    # NOTE: 테스트용 - 하루 1회 제한 비활성화
+    # today_str = date.today().isoformat()
+    # if user.last_roulette_date == today_str:
+    #     return RouletteStatusResponse(can_spin=False, next_available_at=today_str)
     return RouletteStatusResponse(can_spin=True)
 
 
@@ -78,9 +79,10 @@ def spin_roulette(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # NOTE: 테스트용 - 하루 1회 제한 비활성화
     today_str = date.today().isoformat()
-    if user.last_roulette_date == today_str:
-        raise HTTPException(status_code=400, detail="Already claimed today")
+    # if user.last_roulette_date == today_str:
+    #     raise HTTPException(status_code=400, detail="Already claimed today")
 
     item, popcorn_gain, exp_gain = _pick_reward()
 
@@ -94,7 +96,8 @@ def spin_roulette(
 
     user.popcorn = (user.popcorn or 0) + popcorn_gain
     user.exp = (user.exp or 0) + exp_gain
-    user.last_roulette_date = today_str
+    # NOTE: 테스트용 - 하루 1회 제한 비활성화
+    # user.last_roulette_date = today_str
 
     db.commit()
 

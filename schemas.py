@@ -44,6 +44,8 @@ class UserUpdate(BaseSchema):
 class UserResponse(UserBase):
     id: str
     created_at: datetime
+    popcorn: Optional[int] = None
+    exp: Optional[int] = None
 
 
 class UserSearchItem(BaseSchema):

@@ -79,6 +79,17 @@ class PasswordChangeRequest(BaseSchema):
     new_password_confirm: str
 
 
+class DailyQuestionResponse(BaseSchema):
+    answered: bool
+    question: Optional[str] = None
+    message: Optional[str] = None
+
+
+class DailyQuestionAnswerRequest(BaseSchema):
+    user_id: str
+    answer: str
+
+
 # ============================================
 # Movie Schemas
 # ============================================

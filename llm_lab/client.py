@@ -48,12 +48,18 @@ class LLMClient:
         if system_prompt:
             body["system"] = system_prompt
         
+        print("<request body>")
+        print(body)
+
         response = self.client.invoke_model(
             modelId=self.model_id,
             body=json.dumps(body)
         )
         
         response_body = json.loads(response["body"].read())
+        
+        print("<response body>")
+        print(response_body)
         
         return {
             "response": response_body["content"][0]["text"],

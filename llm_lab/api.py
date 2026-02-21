@@ -7,8 +7,12 @@ from typing import List, Optional
 
 from llm_lab.client import LLMClient
 from llm_lab.prompts import list_prompts
+from llm_lab.recommender import LLMRecommender
 
 router = APIRouter(prefix="/api/llm", tags=["llm-chat"])
+
+# LLM 추천기 초기화 (전역)
+llm_recommender = LLMRecommender()
 
 
 class ChatMessage(BaseModel):

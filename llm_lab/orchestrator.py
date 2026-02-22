@@ -160,20 +160,28 @@ JSON만 출력하세요:"""
         """
         all_candidates = {}  # movie_id -> movie_info
         
+        # 쿼리 유형 분석 및 가중치 결정
+        keyword_weight, emotion_weight = self._determine_weights(
+            user_input=user_input,
+            query_plan=query_plan
+        )
+        
+        print(f"🎯 가중치 결정: 키워드={keyword_weight:.1f}, 감성={emotion_weight:.1f}")
+        
         # Source 1: 키워드 검색 (하이브리드 검색 활용)
         try:
             # 감성 분석
             search_result = emotional_search({"text": user_input})
             emotion_scores = search_result["expanded_query"]["emotion_scores"]
             
-            # 하이브리드 검색
+            # 하이브리드 검색 (동적 가중치 적용)
             keyword_results = self.db_connector.search_movies_hybrid(
                 user_input=user_input,
                 emotion_scores=emotion_scores,
                 top_k=pool_size,
                 genres=query_plan.get("genres"),
-                keyword_weight=0.6,  # 키워드 중심
-                emotion_weight=0.4
+                keyword_weight=keyword_weight,  # 동적 가중치
+                emotion_weight=emotion_weight   # 동적 가중치
             )
             
             for movie in keyword_results:
@@ -211,6 +219,79 @@ JSON만 출력하세요:"""
         candidates.sort(key=lambda x: len(x.get('sources', [])), reverse=True)
         
         return candidates[:pool_size]
+    
+    def _determine_weights(
+        self,
+        user_input: str,
+        query_plan: Dict
+    ) -> tuple[float, float]:
+        """
+        쿼리 유형 분석 및 가중치 결정
+        
+        Args:
+            user_input: 사용자 입력
+            query_plan: 구조화된 쿼리
+            
+        Returns:
+            (keyword_weight, emotion_weight) 튜플
+        """
+        # 1. 키워드 개수 확인
+        keywords = query_plan.get("keywords", [])
+        keyword_count = len(keywords)
+        
+        # 2. 감성 단어 개수 확인
+        mood_words = query_plan.get("mood", [])
+        mood_count = len(mood_words)
+        
+        # 3. 감성 키워드 리스트 (한국어)
+        emotion_keywords = {
+            '우울', '슬픈', '슬프', '힐링', '따뜻', '감동', '설레', '로맨틱',
+            '무서', '긴장', '스릴', '웃긴', '재미', '유쾌', '밝은', '어두운',
+            '잔잔', '몽환', '희망', '통쾌', '소름', '현실', '멜로', '코미디'
+        }
+        
+        # 4. 입력에서 감성 키워드 찾기
+        emotion_word_count = sum(
+            1 for word in emotion_keywords 
+            if word in user_input
+        )
+        
+        # 5. 주제/키워드 단어 리스트 (한국어)
+        topic_keywords = {
+            '직장', '상사', '학교', '선생', '가족', '부모', '친구', '연인',
+            '전쟁', '역사', '정치', '범죄', '의사', '경찰', '군인', '요리',
+            '음악', '춤', '스포츠', '게임', '여행', '우주', '좀비', '로봇',
+            '마법', '판타지', '시간여행', '평행우주', '복수', '성장', '사랑'
+        }
+        
+        # 6. 입력에서 주제 키워드 찾기
+        topic_word_count = sum(
+            1 for word in topic_keywords 
+            if word in user_input
+        )
+        
+        # 7. 가중치 결정 로직
+        
+        # 케이스 1: 주제 키워드가 많고 감성 키워드가 적음 → 키워드 중심
+        if topic_word_count >= 2 and emotion_word_count == 0:
+            return (0.9, 0.1)  # 키워드 90%
+        
+        if topic_word_count >= 1 and emotion_word_count == 0:
+            return (0.8, 0.2)  # 키워드 80%
+        
+        # 케이스 2: 감성 키워드가 많고 주제 키워드가 적음 → 감성 중심
+        if emotion_word_count >= 2 and topic_word_count == 0:
+            return (0.2, 0.8)  # 감성 80%
+        
+        if emotion_word_count >= 1 and topic_word_count == 0:
+            return (0.3, 0.7)  # 감성 70%
+        
+        # 케이스 3: 둘 다 있음 → 균형
+        if topic_word_count >= 1 and emotion_word_count >= 1:
+            return (0.5, 0.5)  # 균형 50:50
+        
+        # 케이스 4: 둘 다 없음 (일반적인 쿼리) → 약간 키워드 우선
+        return (0.6, 0.4)  # 키워드 60%
     
     def _rank_and_explain(
         self,

@@ -5,6 +5,7 @@ import boto3
 import json
 import os
 from typing import List, Dict, Optional
+from llm_lab.debug_utils import print_request_body, print_response_body
 
 
 class LLMClient:
@@ -48,8 +49,8 @@ class LLMClient:
         if system_prompt:
             body["system"] = system_prompt
         
-        print("<request body>")
-        print(body)
+        # 디버깅: Request body 출력
+        print_request_body(body)
 
         response = self.client.invoke_model(
             modelId=self.model_id,
@@ -58,8 +59,8 @@ class LLMClient:
         
         response_body = json.loads(response["body"].read())
         
-        print("<response body>")
-        print(response_body)
+        # 디버깅: Response body 출력
+        print_response_body(response_body)
         
         return {
             "response": response_body["content"][0]["text"],

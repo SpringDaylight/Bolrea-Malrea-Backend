@@ -12,6 +12,12 @@ from typing import List, Dict, Optional, Set
 import json
 from llm_lab.client import LLMClient
 from llm_lab.movie_db_connector import MovieDBConnector
+from llm_lab.debug_utils import (
+    print_candidate_retrieval,
+    print_weight_decision,
+    print_candidate_merge,
+    print_debug_separator
+)
 from domain.a5_emotional_search import emotional_search
 
 
@@ -49,8 +55,8 @@ class LLMOrchestrator:
         # Step 1: Planner LLM - 요청 분석
         query_plan = self._plan_query(user_input)
         
-        # Step 2: Multi-source Retrieval
-        candidates = self._retrieve_candidates(
+        # Step 2: Multi-source Retrieval (가중치 결정 포함)
+        candidates, keyword_weight, emotion_weight = self._retrieve_candidates_with_weights(
             user_input=user_input,
             query_plan=query_plan,
             pool_size=candidate_pool_size
@@ -63,11 +69,13 @@ class LLMOrchestrator:
                 "candidates_count": 0
             }
         
-        # Step 3: Ranker LLM - 재랭킹 + 설명
+        # Step 3: Ranker LLM - 재랭킹 + 설명 (가중치 전달)
         ranked_results = self._rank_and_explain(
             user_input=user_input,
             candidates=candidates,
-            top_k=top_k
+            top_k=top_k,
+            keyword_weight=keyword_weight,
+            emotion_weight=emotion_weight
         )
         
         # Step 4: ID Validation - 할루시네이션 방지
@@ -77,6 +85,29 @@ class LLMOrchestrator:
         )
         
         return validated_results
+    
+    def _retrieve_candidates_with_weights(
+        self,
+        user_input: str,
+        query_plan: Dict,
+        pool_size: int
+    ) -> tuple[List[Dict], float, float]:
+        """
+        후보 수집 + 가중치 반환
+        
+        Returns:
+            (candidates, keyword_weight, emotion_weight) 튜플
+        """
+        # 기존 _retrieve_candidates 로직 + 가중치 반환
+        candidates = self._retrieve_candidates(user_input, query_plan, pool_size)
+        
+        # 가중치 다시 계산 (반환용)
+        keyword_weight, emotion_weight = self._determine_weights(
+            user_input=user_input,
+            query_plan=query_plan
+        )
+        
+        return candidates, keyword_weight, emotion_weight
     
     def _plan_query(self, user_input: str) -> Dict:
         """
@@ -158,6 +189,8 @@ JSON만 출력하세요:"""
         Returns:
             후보 영화 리스트
         """
+        print_debug_separator("🎬 후보군 수집 시작")
+        
         all_candidates = {}  # movie_id -> movie_info
         
         # 쿼리 유형 분석 및 가중치 결정
@@ -166,41 +199,67 @@ JSON만 출력하세요:"""
             query_plan=query_plan
         )
         
-        print(f"🎯 가중치 결정: 키워드={keyword_weight:.1f}, 감성={emotion_weight:.1f}")
+        # 가중치 결정 이유 생성
+        reason = self._get_weight_reason(keyword_weight, emotion_weight)
+        print_weight_decision(keyword_weight, emotion_weight, reason)
         
-        # Source 1: 키워드 검색 (하이브리드 검색 활용)
+        # Source 1: 키워드 검색 (DB에서 직접 검색)
+        keyword_results = []
         try:
+            print(f"\n🔍 키워드 검색 시작 (DB 직접 검색)...")
+            
+            # LLM이 추출한 키워드 사용 (더 정확함)
+            keywords = query_plan.get("keywords", [])
+            
+            # 폴백: LLM이 키워드를 못 뽑았으면 규칙 기반으로 추출
+            if not keywords:
+                keywords = self.db_connector._extract_keywords(user_input)
+                print(f"   ⚠️ LLM 키워드 없음 - 규칙 기반 추출: {keywords}")
+            else:
+                print(f"   ✅ LLM 추출 키워드: {keywords}")
+            
+            if keywords:
+                # DB에서 직접 키워드 검색
+                keyword_results = self.db_connector.search_movies_by_keyword(
+                    keywords=keywords,
+                    top_k=pool_size,
+                    genres=query_plan.get("genres")
+                )
+                
+                # 디버깅: 키워드 검색 결과 출력
+                print_candidate_retrieval("keyword", keyword_results, top_n=10, show_details=True)
+                
+                for movie in keyword_results:
+                    movie_id = movie['movie_id']
+                    if movie_id not in all_candidates:
+                        all_candidates[movie_id] = movie
+                        all_candidates[movie_id]['sources'] = []
+                    all_candidates[movie_id]['sources'].append('keyword')
+            else:
+                print("   키워드 없음 - 키워드 검색 스킵")
+                
+        except Exception as e:
+            print(f"⚠️ 키워드 검색 오류: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        # Source 2: 벡터 검색 (감성 기반)
+        vector_results = []
+        try:
+            print(f"\n🎭 벡터 검색 시작 (감성 기반)...")
+            
             # 감성 분석
             search_result = emotional_search({"text": user_input})
             emotion_scores = search_result["expanded_query"]["emotion_scores"]
             
-            # 하이브리드 검색 (동적 가중치 적용)
-            keyword_results = self.db_connector.search_movies_hybrid(
-                user_input=user_input,
-                emotion_scores=emotion_scores,
-                top_k=pool_size,
-                genres=query_plan.get("genres"),
-                keyword_weight=keyword_weight,  # 동적 가중치
-                emotion_weight=emotion_weight   # 동적 가중치
-            )
-            
-            for movie in keyword_results:
-                movie_id = movie['movie_id']
-                if movie_id not in all_candidates:
-                    all_candidates[movie_id] = movie
-                    all_candidates[movie_id]['sources'] = []
-                all_candidates[movie_id]['sources'].append('keyword')
-                
-        except Exception as e:
-            print(f"⚠️ 키워드 검색 오류: {e}")
-        
-        # Source 2: 벡터 검색 (감성 기반)
-        try:
             vector_results = self.db_connector.search_movies_by_emotion(
                 emotion_scores=emotion_scores,
                 top_k=pool_size,
                 genres=query_plan.get("genres")
             )
+            
+            # 디버깅: 벡터 검색 결과 출력
+            print_candidate_retrieval("vector", vector_results, top_n=10, show_details=True)
             
             for movie in vector_results:
                 movie_id = movie['movie_id']
@@ -211,14 +270,61 @@ JSON만 출력하세요:"""
                 
         except Exception as e:
             print(f"⚠️ 벡터 검색 오류: {e}")
+            import traceback
+            traceback.print_exc()
         
         # 후보 리스트로 변환
         candidates = list(all_candidates.values())
         
-        # 다중 소스에서 발견된 영화 우선순위
-        candidates.sort(key=lambda x: len(x.get('sources', [])), reverse=True)
+        # 다중 소스에서 발견된 영화 개수
+        multi_source_count = sum(1 for c in candidates if len(c.get('sources', [])) > 1)
         
-        return candidates[:pool_size]
+        # 디버깅: 병합 정보 출력
+        total_count = len(keyword_results) + len(vector_results)
+        print_candidate_merge(total_count, len(candidates), multi_source_count)
+        
+        # 최종 점수 계산 (가중치 반영 + 다중 소스 보너스)
+        for candidate in candidates:
+            source_count = len(candidate.get('sources', []))
+            original_score = candidate.get('similarity_score', 0)
+            sources = candidate.get('sources', [])
+            
+            # 소스별 가중치 적용
+            weighted_score = 0.0
+            
+            if 'keyword' in sources:
+                # 키워드 검색 점수에 키워드 가중치 적용
+                keyword_score = candidate.get('keyword_score', original_score)
+                weighted_score = keyword_score * keyword_weight
+            
+            if 'vector' in sources:
+                # 벡터 검색 점수에 감성 가중치 적용
+                emotion_score = candidate.get('similarity_score', original_score)
+                if 'keyword' in sources:
+                    # 둘 다 있으면 합산
+                    weighted_score += emotion_score * emotion_weight
+                else:
+                    # 벡터만 있으면 그대로
+                    weighted_score = emotion_score * emotion_weight
+            
+            # 다중 소스 보너스: 2개 소스 = +0.05
+            multi_source_bonus = (source_count - 1) * 0.05
+            
+            # 최종 점수 = 가중치 적용 점수 + 다중 소스 보너스
+            candidate['final_score'] = weighted_score + multi_source_bonus
+            candidate['weighted_score'] = weighted_score
+            candidate['multi_source_bonus'] = multi_source_bonus
+        
+        # 최종 점수로 정렬
+        candidates.sort(key=lambda x: x.get('final_score', 0), reverse=True)
+        
+        # 최종 후보 풀
+        final_candidates = candidates[:pool_size]
+        
+        print(f"\n✅ 최종 후보 풀: {len(final_candidates)}개")
+        print_candidate_retrieval("final", final_candidates, top_n=10, show_details=True)
+        
+        return final_candidates
     
     def _determine_weights(
         self,
@@ -293,11 +399,35 @@ JSON만 출력하세요:"""
         # 케이스 4: 둘 다 없음 (일반적인 쿼리) → 약간 키워드 우선
         return (0.6, 0.4)  # 키워드 60%
     
+    def _get_weight_reason(self, keyword_weight: float, emotion_weight: float) -> str:
+        """
+        가중치 결정 이유 생성
+        
+        Args:
+            keyword_weight: 키워드 가중치
+            emotion_weight: 감성 가중치
+            
+        Returns:
+            결정 이유 문자열
+        """
+        if keyword_weight >= 0.8:
+            return "주제 키워드 중심 쿼리 (직장, 상사, 학교 등)"
+        elif emotion_weight >= 0.7:
+            return "감성 키워드 중심 쿼리 (우울, 힐링, 설레 등)"
+        elif abs(keyword_weight - emotion_weight) < 0.1:
+            return "주제와 감성이 균형잡힌 쿼리"
+        elif keyword_weight > emotion_weight:
+            return "약간 주제 중심 쿼리"
+        else:
+            return "약간 감성 중심 쿼리"
+    
     def _rank_and_explain(
         self,
         user_input: str,
         candidates: List[Dict],
-        top_k: int
+        top_k: int,
+        keyword_weight: float = 0.5,
+        emotion_weight: float = 0.5
     ) -> Dict:
         """
         Step 3: Ranker LLM - 후보 재랭킹 + 설명 생성
@@ -306,6 +436,8 @@ JSON만 출력하세요:"""
             user_input: 사용자 입력
             candidates: 후보 영화 리스트
             top_k: 최종 추천 개수
+            keyword_weight: 키워드 가중치
+            emotion_weight: 감성 가중치
             
         Returns:
             랭킹 결과 (영화 ID + 설명)
@@ -313,9 +445,16 @@ JSON만 출력하세요:"""
         # 후보 포맷팅 (LLM이 읽을 수 있게)
         candidates_text = self._format_candidates_for_ranking(candidates)
         
+        # 가중치 정보 추가
+        weight_info = ""
+        if keyword_weight > 0.7:
+            weight_info = "\n⚠️ 중요: 이 요청은 키워드/주제 중심입니다. 제목이나 내용에 관련 키워드가 포함된 영화를 우선적으로 선택하세요."
+        elif emotion_weight > 0.7:
+            weight_info = "\n⚠️ 중요: 이 요청은 감성/분위기 중심입니다. 사용자가 원하는 감정이나 분위기를 제공하는 영화를 우선적으로 선택하세요."
+        
         ranker_prompt = f"""당신은 영화 추천 전문가입니다. 사용자의 요청에 가장 적합한 영화를 선택하고 이유를 설명하세요.
 
-사용자 요청: "{user_input}"
+사용자 요청: "{user_input}"{weight_info}
 
 후보 영화 목록:
 {candidates_text}
@@ -426,7 +565,12 @@ JSON만 출력하세요:"""
                 "title": movie['title'],
                 "genres": movie.get('genres', []),
                 "release_year": movie.get('release_year'),
-                "similarity_score": movie.get('similarity_score', 0),
+                "similarity_score": movie.get('final_score', movie.get('similarity_score', 0)),  # 최종 점수 사용
+                "final_score": movie.get('final_score', 0),  # 최종 점수 (가중치 적용 + 보너스)
+                "weighted_score": movie.get('weighted_score', 0),  # 가중치 적용 점수
+                "keyword_score": movie.get('keyword_score', 0),  # 키워드 점수
+                "emotion_score": movie.get('similarity_score', 0) if 'vector' in movie.get('sources', []) else 0,  # 감성 점수
+                "sources": movie.get('sources', []),  # 검색 소스
                 "detail_url": movie.get('detail_url'),
                 "poster_url": movie.get('poster_url'),
                 "rating": movie.get('rating'),

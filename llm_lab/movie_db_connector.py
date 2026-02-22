@@ -18,6 +18,104 @@ class MovieDBConnector:
         self.db = SessionLocal()
         self.repo = MovieVectorRepository(self.db)
     
+    def search_movies_by_keyword(
+        self,
+        keywords: List[str],
+        top_k: int = 20,
+        genres: Optional[List[str]] = None,
+        year_from: Optional[int] = None,
+        year_to: Optional[int] = None
+    ) -> List[Dict]:
+        """
+        키워드 기반 영화 검색 (DB에서 직접 검색)
+        
+        Args:
+            keywords: 검색 키워드 리스트
+            top_k: 상위 k개 결과
+            genres: 장르 필터
+            year_from: 개봉년도 시작
+            year_to: 개봉년도 끝
+            
+        Returns:
+            영화 후보 리스트
+        """
+        if not keywords:
+            return []
+        
+        # 1. Movie 테이블에서 검색
+        query = self.db.query(Movie)
+        
+        # 2. 키워드 필터 (title 또는 synopsis에 포함)
+        keyword_filters = []
+        for keyword in keywords:
+            keyword_filters.append(
+                or_(
+                    Movie.title.ilike(f'%{keyword}%'),
+                    Movie.synopsis.ilike(f'%{keyword}%')
+                )
+            )
+        
+        # OR 조건으로 결합 (하나라도 매칭되면)
+        if keyword_filters:
+            query = query.filter(or_(*keyword_filters))
+        
+        # 3. 연도 필터 적용
+        if year_from:
+            from sqlalchemy import extract
+            query = query.filter(extract('year', Movie.release) >= year_from)
+        if year_to:
+            from sqlalchemy import extract
+            query = query.filter(extract('year', Movie.release) <= year_to)
+        
+        # 4. 장르 필터 (있으면)
+        # Note: 장르는 별도 테이블이므로 join 필요
+        
+        movies = query.all()
+        
+        if not movies:
+            return []
+        
+        # 5. 키워드 매칭 점수 계산
+        results = []
+        for movie in movies:
+            # 장르 필터 (있으면)
+            if genres:
+                movie_genres = [g.genre for g in movie.genres]
+                if not any(g in movie_genres for g in genres):
+                    continue
+            
+            # 키워드 매칭 점수
+            keyword_score = self._calculate_keyword_score(
+                movie_title=movie.title,
+                movie_synopsis=movie.synopsis or '',
+                keywords=keywords
+            )
+            
+            # movie_vector 정보 가져오기 (있으면)
+            movie_vector = self.db.query(MovieVector).filter(
+                MovieVector.movie_id == movie.id
+            ).first()
+            
+            results.append({
+                "movie_id": movie.id,
+                "title": movie.title,
+                "genres": [g.genre for g in movie.genres],
+                "release_year": movie.release.year if movie.release else None,
+                "similarity_score": float(keyword_score),  # 키워드 점수를 유사도로 사용
+                "keyword_score": float(keyword_score),
+                "detail_url": f"/movies/{movie.id}",
+                "poster_url": movie.poster_url,
+                "rating": float(movie.avg_rating) if movie.avg_rating else None,
+                "synopsis": movie.synopsis,
+                "emotion_profile": movie_vector.emotion_scores if movie_vector else {},
+                "narrative_profile": movie_vector.narrative_traits if movie_vector else {}
+            })
+        
+        # 6. 키워드 점수 순으로 정렬
+        results.sort(key=lambda x: x["similarity_score"], reverse=True)
+        
+        return results[:top_k]
+    
     def search_movies_hybrid(
         self,
         user_input: str,
@@ -173,8 +271,12 @@ class MovieDBConnector:
             '영화', '추천', '해줘', '주세요', '보고', '싶어', '관련', '된', 
             '와', '과', '의', '를', '을', '이', '가', '에', '도', '는', '은',
             '한', '하는', '있는', '없는', '같은', '대한', '위한', '통해',
-            '어떤', '무슨', '어느', '몇', '여러', '추천해줘', '관련된'
+            '어떤', '무슨', '어느', '몇', '여러', '추천해줘', '관련된',
+            '제목', '들어간', '들어가', '포함', '포함된', '나오는', '나온'  # 추가
         }
+        
+        # 따옴표 제거
+        text = text.replace("'", "").replace('"', '').replace(''', '').replace(''', '')
         
         # 공백으로 분리
         words = text.split()
@@ -256,12 +358,28 @@ class MovieDBConnector:
     
     def _emotion_scores_to_vector(self, emotion_scores: Dict[str, float]) -> np.ndarray:
         """감성 점수를 벡터로 변환"""
-        # 감성 태그 순서 (taxonomy와 동일하게)
+        # 감성 태그 순서 (emotion_tag.json의 emotion 카테고리와 동일하게)
         emotion_tags = [
-            "우울해요", "슬퍼요", "긴장돼요", "무서워요", "설레요", 
-            "로맨틱해요", "웃겨요", "밝은 분위기예요", "어두운 분위기예요",
-            "잔잔해요", "현실적이에요", "몽환적이에요", "감동적이에요",
-            "힐링돼요", "희망적이에요", "통쾌해요"
+            "감동적이에요",
+            "따뜻해요",
+            "힐링돼요",
+            "슬퍼요",
+            "여운이 길어요",
+            "희망적이에요",
+            "우울해요",
+            "긴장돼요",
+            "무서워요",
+            "소름 돋아요",
+            "설레요",
+            "로맨틱해요",
+            "통쾌해요",
+            "웃겨요",
+            "밝은 분위기예요",
+            "어두운 분위기예요",
+            "잔잔해요",
+            "감정 기복이 커요",
+            "현실적이에요",
+            "몽환적이에요"
         ]
         
         vector = []

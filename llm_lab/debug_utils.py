@@ -120,3 +120,154 @@ def print_debug_separator(title: str = "") -> None:
         print(f"{'='*80}\n")
     else:
         print(f"\n{'='*80}\n")
+
+
+def print_candidate_retrieval(
+    source: str,
+    candidates: list,
+    top_n: int = 5,
+    show_details: bool = True
+) -> None:
+    """
+    후보군 검색 결과를 보기 좋게 출력
+    
+    Args:
+        source: 검색 소스 (keyword, vector, external 등)
+        candidates: 후보 영화 리스트
+        top_n: 상위 몇 개를 표시할지
+        show_details: 상세 정보 표시 여부
+    """
+    source_icons = {
+        "keyword": "🔍",
+        "vector": "🎭",
+        "external": "🌐",
+        "hybrid": "🔀",
+        "final": "🎬"
+    }
+    
+    icon = source_icons.get(source, "📋")
+    
+    print(f"\n{icon} {source.upper()} 검색 결과: {len(candidates)}개 후보")
+    print("-" * 80)
+    
+    if not candidates:
+        print("  (후보 없음)")
+        return
+    
+    # 상위 N개만 표시
+    display_candidates = candidates[:top_n]
+    
+    for i, movie in enumerate(display_candidates, 1):
+        title = movie.get('title', 'N/A')
+        movie_id = movie.get('movie_id', 'N/A')
+        
+        print(f"  {i}. [{movie_id}] {title}")
+        
+        if show_details:
+            # 최종 점수 정보 (final 소스인 경우)
+            if source == "final" and 'final_score' in movie:
+                final_score = movie.get('final_score', 0)
+                weighted_score = movie.get('weighted_score', 0)
+                multi_bonus = movie.get('multi_source_bonus', 0)
+                
+                # 소스별 원본 점수
+                sources = movie.get('sources', [])
+                keyword_score = movie.get('keyword_score', 0) if 'keyword' in sources else None
+                emotion_score = movie.get('similarity_score', 0) if 'vector' in sources else None
+                
+                # 점수 설명
+                print(f"     🎯 최종 점수: {final_score:.3f} ({final_score*100:.1f}%)")
+                print(f"        = 가중치 적용 점수: {weighted_score:.3f}")
+                
+                if keyword_score is not None and emotion_score is not None:
+                    print(f"          (키워드 {keyword_score:.3f} + 감성 {emotion_score:.3f})")
+                elif keyword_score is not None:
+                    print(f"          (키워드만: {keyword_score:.3f})")
+                elif emotion_score is not None:
+                    print(f"          (감성만: {emotion_score:.3f})")
+                
+                if multi_bonus > 0:
+                    print(f"        + 다중 소스 보너스: {multi_bonus:.3f}")
+            
+            # 키워드 검색 결과
+            elif source == "keyword":
+                keyword_score = movie.get('keyword_score', 0)
+                print(f"     키워드 매칭: {keyword_score:.3f} ({keyword_score*100:.1f}%)")
+                print(f"        (제목 매칭 = 2점, 시놉시스 매칭 = 1점)")
+            
+            # 벡터 검색 결과
+            elif source == "vector":
+                emotion_score = movie.get('similarity_score', 0)
+                print(f"     감성 유사도: {emotion_score:.3f} ({emotion_score*100:.1f}%)")
+                print(f"        (코사인 유사도: -1.0 ~ 1.0)")
+            
+            # 하이브리드 점수 정보 (레거시)
+            elif 'keyword_score' in movie and 'emotion_similarity' in movie:
+                keyword_score = movie.get('keyword_score', 0)
+                emotion_score = movie.get('emotion_similarity', 0)
+                hybrid_score = movie.get('similarity_score', 0)
+                print(f"     하이브리드: {hybrid_score:.3f} | 키워드={keyword_score:.3f} | 감성={emotion_score:.3f}")
+            
+            else:
+                score = movie.get('similarity_score', 0)
+                print(f"     점수: {score:.3f}")
+            
+            # 장르 정보
+            genres = movie.get('genres', [])
+            if genres:
+                print(f"     장르: {', '.join(genres[:3])}")
+            
+            # 소스 정보 (다중 소스에서 발견된 경우)
+            sources = movie.get('sources', [])
+            if sources:
+                print(f"     발견: {', '.join(sources)}")
+    
+    if len(candidates) > top_n:
+        print(f"  ... 외 {len(candidates) - top_n}개")
+    
+    print("-" * 80)
+
+
+def print_weight_decision(
+    keyword_weight: float,
+    emotion_weight: float,
+    reason: str = ""
+) -> None:
+    """
+    가중치 결정 정보를 보기 좋게 출력
+    
+    Args:
+        keyword_weight: 키워드 가중치
+        emotion_weight: 감성 가중치
+        reason: 결정 이유
+    """
+    print(f"\n⚖️  가중치 결정")
+    print("-" * 80)
+    print(f"  키워드: {keyword_weight*100:>5.1f}% {'█' * int(keyword_weight * 20)}")
+    print(f"  감성:   {emotion_weight*100:>5.1f}% {'█' * int(emotion_weight * 20)}")
+    
+    if reason:
+        print(f"  이유: {reason}")
+    
+    print("-" * 80)
+
+
+def print_candidate_merge(
+    total_candidates: int,
+    unique_candidates: int,
+    multi_source_count: int
+) -> None:
+    """
+    후보군 병합 정보를 출력
+    
+    Args:
+        total_candidates: 전체 후보 수
+        unique_candidates: 중복 제거 후 후보 수
+        multi_source_count: 다중 소스에서 발견된 후보 수
+    """
+    print(f"\n🔗 후보군 병합")
+    print("-" * 80)
+    print(f"  전체 후보: {total_candidates}개")
+    print(f"  고유 후보: {unique_candidates}개")
+    print(f"  다중 소스 발견: {multi_source_count}개")
+    print("-" * 80)

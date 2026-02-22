@@ -30,7 +30,12 @@ class Movie(BaseModel):
     title: str
     genres: List[str]
     release_year: int
-    similarity_score: float
+    similarity_score: float  # 프론트 호환성 (final_score와 동일)
+    final_score: Optional[float] = None  # 최종 점수 (가중치 + 보너스)
+    weighted_score: Optional[float] = None  # 가중치 적용 점수
+    keyword_score: Optional[float] = None  # 키워드 점수
+    emotion_score: Optional[float] = None  # 감성 점수
+    sources: Optional[List[str]] = None  # 검색 소스 (keyword, vector)
     detail_url: str
     poster_url: Optional[str] = None
     rating: Optional[float] = None

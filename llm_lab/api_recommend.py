@@ -40,6 +40,8 @@ class Movie(BaseModel):
     poster_url: Optional[str] = None
     rating: Optional[float] = None
     reason: Optional[str] = None  # 개별 추천 이유
+    is_selected: Optional[bool] = None  # 최종 선택 여부
+    not_selected_reason: Optional[str] = None  # 선택되지 않은 이유
 
 
 class RecommendResponse(BaseModel):
@@ -48,6 +50,10 @@ class RecommendResponse(BaseModel):
     candidates_count: int
     usage: Optional[dict] = None
     method: str = "basic"  # basic or orchestrator
+    keyword_candidates: Optional[List[Movie]] = None  # 키워드 후보군
+    vector_candidates: Optional[List[Movie]] = None  # 벡터 후보군
+    keyword_weight: Optional[float] = None  # 키워드 가중치
+    emotion_weight: Optional[float] = None  # 감성 가중치
 
 
 @router.post("/recommend", response_model=RecommendResponse)

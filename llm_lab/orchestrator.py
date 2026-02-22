@@ -50,13 +50,13 @@ class LLMOrchestrator:
             candidate_pool_size: 후보 풀 크기
             
         Returns:
-            추천 결과 (영화 리스트 + 설명)
+            추천 결과 (영화 리스트 + 설명 + 후보군 정보)
         """
         # Step 1: Planner LLM - 요청 분석
         query_plan = self._plan_query(user_input)
         
         # Step 2: Multi-source Retrieval (가중치 결정 포함)
-        candidates, keyword_weight, emotion_weight = self._retrieve_candidates_with_weights(
+        candidates, keyword_weight, emotion_weight, keyword_results, vector_results = self._retrieve_candidates_with_weights(
             user_input=user_input,
             query_plan=query_plan,
             pool_size=candidate_pool_size
@@ -66,8 +66,14 @@ class LLMOrchestrator:
             return {
                 "recommendations": [],
                 "explanation": "죄송합니다. 조건에 맞는 영화를 찾을 수 없습니다.",
-                "candidates_count": 0
+                "candidates_count": 0,
+                "keyword_candidates": [],
+                "vector_candidates": []
             }
+        
+        # 소스별 후보 분리 (원본 검색 결과 사용, 상위 10개씩)
+        keyword_candidates = keyword_results[:10]
+        vector_candidates = vector_results[:10]
         
         # Step 3: Ranker LLM - 재랭킹 + 설명 (가중치 전달)
         ranked_results = self._rank_and_explain(
@@ -84,6 +90,19 @@ class LLMOrchestrator:
             candidate_pool=candidates
         )
         
+        # 선택된 영화 ID 집합
+        selected_ids = {m['movie_id'] for m in validated_results['recommendations']}
+        
+        # 후보군 정보 추가 (선택 여부 포함)
+        validated_results['keyword_candidates'] = self._format_candidates_for_display(
+            keyword_candidates, selected_ids
+        )
+        validated_results['vector_candidates'] = self._format_candidates_for_display(
+            vector_candidates, selected_ids
+        )
+        validated_results['keyword_weight'] = keyword_weight
+        validated_results['emotion_weight'] = emotion_weight
+        
         return validated_results
     
     def _retrieve_candidates_with_weights(
@@ -91,15 +110,17 @@ class LLMOrchestrator:
         user_input: str,
         query_plan: Dict,
         pool_size: int
-    ) -> tuple[List[Dict], float, float]:
+    ) -> tuple[List[Dict], float, float, List[Dict], List[Dict]]:
         """
-        후보 수집 + 가중치 반환
+        후보 수집 + 가중치 반환 + 원본 소스별 결과 반환
         
         Returns:
-            (candidates, keyword_weight, emotion_weight) 튜플
+            (candidates, keyword_weight, emotion_weight, keyword_results, vector_results) 튜플
         """
-        # 기존 _retrieve_candidates 로직 + 가중치 반환
-        candidates = self._retrieve_candidates(user_input, query_plan, pool_size)
+        # 기존 _retrieve_candidates 로직 + 가중치 + 원본 결과 반환
+        candidates, keyword_results, vector_results = self._retrieve_candidates(
+            user_input, query_plan, pool_size
+        )
         
         # 가중치 다시 계산 (반환용)
         keyword_weight, emotion_weight = self._determine_weights(
@@ -107,7 +128,7 @@ class LLMOrchestrator:
             query_plan=query_plan
         )
         
-        return candidates, keyword_weight, emotion_weight
+        return candidates, keyword_weight, emotion_weight, keyword_results, vector_results
     
     def _plan_query(self, user_input: str) -> Dict:
         """
@@ -172,7 +193,7 @@ JSON만 출력하세요:"""
         user_input: str,
         query_plan: Dict,
         pool_size: int
-    ) -> List[Dict]:
+    ) -> tuple[List[Dict], List[Dict], List[Dict]]:
         """
         Step 2: Multi-source Retrieval
         
@@ -187,7 +208,7 @@ JSON만 출력하세요:"""
             pool_size: 후보 풀 크기
             
         Returns:
-            후보 영화 리스트
+            (병합된 후보 리스트, 키워드 검색 결과, 벡터 검색 결과) 튜플
         """
         print_debug_separator("🎬 후보군 수집 시작")
         
@@ -324,7 +345,7 @@ JSON만 출력하세요:"""
         print(f"\n✅ 최종 후보 풀: {len(final_candidates)}개")
         print_candidate_retrieval("final", final_candidates, top_n=10, show_details=True)
         
-        return final_candidates
+        return final_candidates, keyword_results, vector_results
     
     def _determine_weights(
         self,
@@ -583,6 +604,77 @@ JSON만 출력하세요:"""
             "candidates_count": len(candidate_pool),
             "validated": True
         }
+    
+    def _format_candidates_for_display(
+        self,
+        candidates: List[Dict],
+        selected_ids: Set[int]
+    ) -> List[Dict]:
+        """
+        후보를 프론트엔드 표시용으로 포맷팅
+        
+        Args:
+            candidates: 후보 리스트
+            selected_ids: 최종 선택된 영화 ID 집합
+            
+        Returns:
+            포맷팅된 후보 리스트
+        """
+        formatted = []
+        for movie in candidates:
+            movie_id = movie['movie_id']
+            is_selected = movie_id in selected_ids
+            final_score = movie.get('final_score', 0)
+            
+            formatted.append({
+                "movie_id": movie_id,
+                "title": movie['title'],
+                "genres": movie.get('genres', []),
+                "release_year": movie.get('release_year'),
+                "similarity_score": final_score,  # Pydantic required field
+                "final_score": final_score,
+                "keyword_score": movie.get('keyword_score', 0),
+                "emotion_score": movie.get('similarity_score', 0) if 'vector' in movie.get('sources', []) else 0,
+                "sources": movie.get('sources', []),
+                "detail_url": movie.get('detail_url'),
+                "poster_url": movie.get('poster_url'),
+                "rating": movie.get('rating'),
+                "is_selected": is_selected,
+                "not_selected_reason": self._get_not_selected_reason(movie, is_selected)
+            })
+        
+        return formatted
+    
+    def _get_not_selected_reason(self, movie: Dict, is_selected: bool) -> Optional[str]:
+        """
+        선택되지 않은 이유 생성
+        
+        Args:
+            movie: 영화 정보
+            is_selected: 선택 여부
+            
+        Returns:
+            선택되지 않은 이유 (선택된 경우 None)
+        """
+        if is_selected:
+            return None
+        
+        final_score = movie.get('final_score', 0)
+        sources = movie.get('sources', [])
+        
+        # 점수가 낮은 경우
+        if final_score < 0.3:
+            return "점수가 낮아 제외되었습니다"
+        
+        # 단일 소스인 경우
+        if len(sources) == 1:
+            if 'keyword' in sources:
+                return "키워드 매칭만 있고 감성 유사도가 낮아 제외되었습니다"
+            elif 'vector' in sources:
+                return "감성 유사도만 있고 키워드 매칭이 없어 제외되었습니다"
+        
+        # 기타
+        return "다른 영화들에 비해 종합 점수가 낮아 제외되었습니다"
     
     def close(self):
         """리소스 정리"""

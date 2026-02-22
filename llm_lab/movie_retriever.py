@@ -67,18 +67,21 @@ class MovieRetriever:
         search_result = emotional_search(search_payload)
         emotion_scores = search_result["expanded_query"]["emotion_scores"]
         
-        # 우선순위 1: 실제 DB 사용 (movie_vectors 테이블)
+        # 우선순위 1: 실제 DB 사용 (하이브리드 검색: 감성 + 키워드)
         if self.use_real_db and self.db_connector:
             try:
-                candidates = self.db_connector.search_movies_by_emotion(
+                candidates = self.db_connector.search_movies_hybrid(
+                    user_input=user_input,  # 키워드 추출용
                     emotion_scores=emotion_scores,
                     top_k=top_k,
                     genres=genres,
                     year_from=year_from,
-                    year_to=year_to
+                    year_to=year_to,
+                    keyword_weight=0.8,  # 키워드 80% (대폭 증가)
+                    emotion_weight=0.2   # 감성 20%
                 )
                 if candidates:
-                    print(f"✅ 실제 DB에서 {len(candidates)}개 영화 검색 완료")
+                    print(f"✅ 실제 DB에서 {len(candidates)}개 영화 검색 완료 (하이브리드)")
                     return candidates
             except Exception as e:
                 print(f"⚠️ 실제 DB 검색 실패: {e}")

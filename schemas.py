@@ -44,6 +44,8 @@ class UserUpdate(BaseSchema):
 class UserResponse(UserBase):
     id: str
     created_at: datetime
+    popcorn: Optional[int] = None
+    exp: Optional[int] = None
 
 
 class UserSearchItem(BaseSchema):
@@ -148,6 +150,7 @@ class MovieResponse(MovieBase):
     avg_rating: Optional[Decimal] = None
     genres: List[str] = []
     tags: List[str] = []
+    reviews_count: int = 0
 
 
 
@@ -221,6 +224,8 @@ class CommentResponse(CommentBase):
     user_id: str
     user_nickname: Optional[str] = None
     created_at: datetime
+    likes_count: int = 0
+    dislikes_count: int = 0
 
 
 # ============================================
@@ -307,6 +312,13 @@ class MessageResponse(BaseSchema):
 class LikeToggleResponse(BaseSchema):
     message: str
     review_id: int
+    likes_count: int
+    dislikes_count: int
+
+
+class CommentLikeToggleResponse(BaseSchema):
+    message: str
+    comment_id: int
     likes_count: int
     dislikes_count: int
 

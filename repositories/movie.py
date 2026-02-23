@@ -32,21 +32,19 @@ class MovieRepository(BaseRepository[Movie]):
         sort: str = "latest",
         skip: int = 0,
         limit: int = 20
-    ) -> List[Movie]:
+    ) -> List[tuple[Movie, int]]:
         """Search movies by title, genres, category with sorting"""
-        db_query = self.db.query(Movie).options(
+        db_query = self.db.query(
+            Movie,
+            func.count(func.distinct(Review.id)).label("reviews_count")
+        ).options(
             joinedload(Movie.genres),
             joinedload(Movie.tags)
-        )
+        ).outerjoin(Review)
         
         # Text search
         if query:
-            db_query = db_query.filter(
-                or_(
-                    Movie.title.ilike(f"%{query}%"),
-                    Movie.synopsis.ilike(f"%{query}%")
-                )
-            )
+            db_query = db_query.filter(Movie.title.ilike(f"%{query}%"))
         
         # Genre filter
         if genres:
@@ -61,22 +59,13 @@ class MovieRepository(BaseRepository[Movie]):
             ).distinct()
         
         # Sorting
+        db_query = db_query.group_by(Movie.id)
         if sort == "popular":
             # Sort by review count
-            from sqlalchemy import func
-            db_query = (
-                db_query.outerjoin(Review)
-                .group_by(Movie.id)
-                .order_by(func.count(Review.id).desc())
-            )
+            db_query = db_query.order_by(func.count(func.distinct(Review.id)).desc())
         elif sort == "rating":
             # Sort by average rating
-            from sqlalchemy import func
-            db_query = (
-                db_query.outerjoin(Review)
-                .group_by(Movie.id)
-                .order_by(func.coalesce(func.avg(Review.rating), 0).desc())
-            )
+            db_query = db_query.order_by(func.coalesce(func.avg(Review.rating), 0).desc())
         else:  # latest (default)
             db_query = db_query.order_by(Movie.release.desc().nullslast())
         
@@ -93,12 +82,7 @@ class MovieRepository(BaseRepository[Movie]):
         
         # Text search
         if query:
-            db_query = db_query.filter(
-                or_(
-                    Movie.title.ilike(f"%{query}%"),
-                    Movie.synopsis.ilike(f"%{query}%")
-                )
-            )
+            db_query = db_query.filter(Movie.title.ilike(f"%{query}%"))
         
         # Genre filter
         if genres:

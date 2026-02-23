@@ -42,6 +42,8 @@ def get_current_user(
         birth_date=user.birth_date,
         gender=user.gender,
         avatar_text=user.avatar_text,
+        popcorn=user.popcorn,
+        exp=user.exp,
         created_at=user.created_at
     )
 
@@ -95,6 +97,8 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
         birth_date=db_user.birth_date,
         gender=db_user.gender,
         avatar_text=db_user.avatar_text,
+        popcorn=db_user.popcorn,
+        exp=db_user.exp,
         created_at=db_user.created_at
     )
 
@@ -123,6 +127,8 @@ def update_user(
         birth_date=db_user.birth_date,
         gender=db_user.gender,
         avatar_text=db_user.avatar_text,
+        popcorn=db_user.popcorn,
+        exp=db_user.exp,
         created_at=db_user.created_at
     )
 
@@ -295,5 +301,7 @@ def get_user(user_id: str, db: Session = Depends(get_db)):
         birth_date=user.birth_date,
         gender=user.gender,
         avatar_text=user.avatar_text,
+        popcorn=user.popcorn,
+        exp=user.exp,
         created_at=user.created_at
     )

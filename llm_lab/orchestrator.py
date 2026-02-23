@@ -154,6 +154,11 @@ class LLMOrchestrator:
     "attention_level": "집중도"          // high, medium, low
 }}
 
+⚠️ 중요:
+- genres는 사용자가 명시적으로 언급한 경우에만 포함하세요
+- 사용자가 장르를 언급하지 않았다면 genres는 빈 배열로 두세요
+- 키워드나 주제로부터 장르를 추측하지 마세요
+
 JSON만 출력하세요:"""
 
         try:
@@ -595,6 +600,7 @@ JSON만 출력하세요:"""
                 "detail_url": movie.get('detail_url'),
                 "poster_url": movie.get('poster_url'),
                 "rating": movie.get('rating'),
+                "synopsis": movie.get('synopsis'),  # 시놉시스 추가
                 "reason": reason  # LLM이 생성한 개별 이유
             })
         

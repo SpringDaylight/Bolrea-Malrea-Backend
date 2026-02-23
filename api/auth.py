@@ -1,19 +1,26 @@
-"""
-Authentication API endpoints (Kakao OAuth)
-"""
+"""Authentication API endpoints (Kakao OAuth)"""
 import os
 import requests
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, Query, Body, Response, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from db import get_db
 from config import KAKAO_CLIENT_ID, KAKAO_CLIENT_SECRET, KAKAO_REDIRECT_URI
-from schemas import UserResponse, MessageResponse, UserSignupRequest, UserLoginRequest, PasswordChangeRequest
+from schemas import (
+    UserResponse,
+    MessageResponse,
+    UserSignupRequest,
+    UserLoginRequest,
+    PasswordChangeRequest,
+    AuthTokenResponse,
+    AccessTokenResponse,
+)
 from repositories.user import UserRepository
 from repositories.user_auth import UserAuthRepository
+from repositories.refresh_token import RefreshTokenRepository
 from models import User
 from utils.security import (
     hash_password,
@@ -21,9 +28,48 @@ from utils.security import (
     validate_password_policy,
     generate_user_pk,
 )
-from datetime import date
+from utils.jwt import (
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    hash_token,
+    REFRESH_COOKIE_NAME,
+    JWT_COOKIE_SECURE,
+    JWT_COOKIE_SAMESITE,
+    REFRESH_TOKEN_EXPIRES_DAYS,
+)
+from datetime import date, datetime
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+def _set_refresh_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        secure=JWT_COOKIE_SECURE,
+        samesite=JWT_COOKIE_SAMESITE,
+        max_age=REFRESH_TOKEN_EXPIRES_DAYS * 24 * 60 * 60,
+        path="/",
+    )
+
+
+def _clear_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(key=REFRESH_COOKIE_NAME, path="/")
+
+
+def _issue_tokens(user: User, db: Session, response: Response) -> str:
+    refresh_token, jti, expires_at = create_refresh_token(user.id)
+    token_hash = hash_token(refresh_token)
+    RefreshTokenRepository(db).create(
+        user_id=user.id,
+        token_hash=token_hash,
+        jti=jti,
+        expires_at=expires_at,
+    )
+    _set_refresh_cookie(response, refresh_token)
+    return create_access_token(user.id)
 
 
 class KakaoSignupCompleteRequest(BaseModel):
@@ -40,185 +86,194 @@ KAKAO_TOKEN_URL = "https://kauth.kakao.com/oauth/token"
 KAKAO_USER_INFO_URL = "https://kapi.kakao.com/v2/user/me"
 
 
-@router.get("/kakao/login")
-def kakao_login():
-    """Redirect to Kakao OAuth login page"""
-    if not KAKAO_CLIENT_ID:
-        raise HTTPException(status_code=500, detail="KAKAO_CLIENT_ID is not configured")
-    kakao_oauth_url = (
-        f"{KAKAO_AUTH_URL}?"
-        f"client_id={KAKAO_CLIENT_ID}&"
-        f"redirect_uri={KAKAO_REDIRECT_URI}&"
-        f"response_type=code"
-    )
-    return {"auth_url": kakao_oauth_url}
-
-
-@router.get("/kakao/callback")
-def kakao_callback(
-    code: str = Query(..., description="Authorization code from Kakao"),
-    db: Session = Depends(get_db)
-):
-    """Handle Kakao OAuth callback"""
-    
-    print(f"Kakao callback received with code: {code[:20]}...")
-    print(f"Using redirect_uri: {KAKAO_REDIRECT_URI}")
-    print(f"Using client_id: {KAKAO_CLIENT_ID}")
-    print(f"Client secret configured: {bool(KAKAO_CLIENT_SECRET)}")
-    
+# @router.get("/kakao/login")
+# def kakao_login():
+#     """Redirect to Kakao OAuth login page"""
+#     if not KAKAO_CLIENT_ID:
+#         raise HTTPException(status_code=500, detail="KAKAO_CLIENT_ID is not configured")
+#     kakao_oauth_url = (
+#         f"{KAKAO_AUTH_URL}?"
+#         f"client_id={KAKAO_CLIENT_ID}&"
+#         f"redirect_uri={KAKAO_REDIRECT_URI}&"
+#         f"response_type=code"
+#     )
+#     return {"auth_url": kakao_oauth_url}
+# 
+# 
+# @router.get("/kakao/callback")
+# def kakao_callback(
+#     code: str = Query(..., description="Authorization code from Kakao"),
+#     response: Response,
+#     db: Session = Depends(get_db)
+# ):
+#     """Handle Kakao OAuth callback"""
+#     
+#     print(f"Kakao callback received with code: {code[:20]}...")
+#     print(f"Using redirect_uri: {KAKAO_REDIRECT_URI}")
+#     print(f"Using client_id: {KAKAO_CLIENT_ID}")
+#     print(f"Client secret configured: {bool(KAKAO_CLIENT_SECRET)}")
+#     
     # Exchange code for access token
-    token_data = {
-        "grant_type": "authorization_code",
-        "client_id": KAKAO_CLIENT_ID,
-        "redirect_uri": KAKAO_REDIRECT_URI,
-        "code": code
-    }
-    
+#     token_data = {
+#         "grant_type": "authorization_code",
+#         "client_id": KAKAO_CLIENT_ID,
+#         "redirect_uri": KAKAO_REDIRECT_URI,
+#         "code": code
+#     }
+#     
     # Add client_secret if configured
-    if KAKAO_CLIENT_SECRET:
-        token_data["client_secret"] = KAKAO_CLIENT_SECRET
-    
-    token_response = requests.post(
-        KAKAO_TOKEN_URL,
-        data=token_data,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-        timeout=10
-    )
-    
-    if token_response.status_code != 200:
-        error_detail = token_response.json() if token_response.content else {}
-        print(f"Kakao token error: {token_response.status_code}, {error_detail}")
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Failed to get access token from Kakao: {error_detail.get('error_description', error_detail)}"
-        )
-    
-    token_data = token_response.json()
-    access_token = token_data.get("access_token")
-    if not access_token:
-        raise HTTPException(status_code=400, detail="Failed to get access token from Kakao")
-    
+#     if KAKAO_CLIENT_SECRET:
+#         token_data["client_secret"] = KAKAO_CLIENT_SECRET
+#     
+#     token_response = requests.post(
+#         KAKAO_TOKEN_URL,
+#         data=token_data,
+#         headers={"Content-Type": "application/x-www-form-urlencoded"},
+#         timeout=10
+#     )
+#     
+#     if token_response.status_code != 200:
+#         error_detail = token_response.json() if token_response.content else {}
+#         print(f"Kakao token error: {token_response.status_code}, {error_detail}")
+#         raise HTTPException(
+#             status_code=400, 
+#             detail=f"Failed to get access token from Kakao: {error_detail.get('error_description', error_detail)}"
+#         )
+#     
+#     token_data = token_response.json()
+#     access_token = token_data.get("access_token")
+#     if not access_token:
+#         raise HTTPException(status_code=400, detail="Failed to get access token from Kakao")
+#     
     # Get user info from Kakao
-    user_response = requests.get(
-        KAKAO_USER_INFO_URL,
-        headers={"Authorization": f"Bearer {access_token}"},
-        timeout=10
-    )
-    
-    if user_response.status_code != 200:
-        raise HTTPException(status_code=400, detail="Failed to get user info from Kakao")
-    
-    user_data = user_response.json()
-    kakao_id = str(user_data.get("id"))
-    kakao_account = user_data.get("kakao_account", {})
-    profile = kakao_account.get("profile", {})
-    
-    provider = "kakao"
-    provider_user_id = kakao_id
-    nickname = profile.get("nickname", f"User{kakao_id[:6]}")
-    email = kakao_account.get("email")
-    
+#     user_response = requests.get(
+#         KAKAO_USER_INFO_URL,
+#         headers={"Authorization": f"Bearer {access_token}"},
+#         timeout=10
+#     )
+#     
+#     if user_response.status_code != 200:
+#         raise HTTPException(status_code=400, detail="Failed to get user info from Kakao")
+#     
+#     user_data = user_response.json()
+#     kakao_id = str(user_data.get("id"))
+#     kakao_account = user_data.get("kakao_account", {})
+#     profile = kakao_account.get("profile", {})
+#     
+#     provider = "kakao"
+#     provider_user_id = kakao_id
+#     nickname = profile.get("nickname", f"User{kakao_id[:6]}")
+#     email = kakao_account.get("email")
+#     
     # Check if user exists
-    user_repo = UserRepository(db)
-    auth_repo = UserAuthRepository(db)
-
-    auth = auth_repo.get_by_provider(provider, provider_user_id)
-    
-    if auth:
-        # Existing user - return user info
-        user = user_repo.get(auth.user_id)
-        return {
-            "id": user.id,
-            "user_id": user.user_id,
-            "name": user.name,
-            "nickname": user.nickname,
-            "email": user.email,
-            "avatar_text": user.avatar_text,
-            "access_token": access_token,
-            "is_new_user": False
-        }
-    else:
+#     user_repo = UserRepository(db)
+#     auth_repo = UserAuthRepository(db)
+# 
+#     auth = auth_repo.get_by_provider(provider, provider_user_id)
+#     
+#     if auth:
+        # Existing user - issue JWT tokens
+#         user = user_repo.get(auth.user_id)
+#         access_token = _issue_tokens(user, db, response)
+#         return {
+#             "id": user.id,
+#             "user_id": user.user_id,
+#             "name": user.name,
+#             "nickname": user.nickname,
+#             "email": user.email,
+#             "avatar_text": user.avatar_text,
+#             "access_token": access_token,
+#             "token_type": "bearer",
+#             "is_new_user": False
+#         }
+#     else:
         # New user - return temporary info for signup flow
-        return {
-            "id": None,
-            "user_id": None,
-            "name": nickname,
-            "nickname": nickname,
-            "email": email,
-            "avatar_text": "카카오 로그인 사용자",
-            "access_token": access_token,
-            "is_new_user": True,
-            "kakao_id": kakao_id,  # For completing signup later
-            "provider": provider
-        }
-
-
-@router.post("/kakao/complete-signup", response_model=UserResponse, status_code=201)
-def complete_kakao_signup(payload: KakaoSignupCompleteRequest, db: Session = Depends(get_db)):
-    """Complete Kakao user signup after additional info form"""
-    user_repo = UserRepository(db)
-    auth_repo = UserAuthRepository(db)
-    
+#         return {
+#             "id": None,
+#             "user_id": None,
+#             "name": nickname,
+#             "nickname": nickname,
+#             "email": email,
+#             "avatar_text": "카카오 로그인 사용자",
+#             "access_token": access_token,
+#             "is_new_user": True,
+#             "kakao_id": kakao_id,  # For completing signup later
+#             "provider": provider
+#         }
+# 
+# 
+# @router.post("/kakao/complete-signup", response_model=AuthTokenResponse, status_code=201)
+# def complete_kakao_signup(
+#     payload: KakaoSignupCompleteRequest,
+#     response: Response,
+#     db: Session = Depends(get_db)
+# ):
+#     """Complete Kakao user signup after additional info form"""
+#     user_repo = UserRepository(db)
+#     auth_repo = UserAuthRepository(db)
+#     
     # Check if already registered
-    existing_auth = auth_repo.get_by_provider(payload.provider, payload.kakao_id)
-    if existing_auth:
-        raise HTTPException(status_code=400, detail="User already registered")
-    
+#     existing_auth = auth_repo.get_by_provider(payload.provider, payload.kakao_id)
+#     if existing_auth:
+#         raise HTTPException(status_code=400, detail="User already registered")
+#     
     # Check nickname availability
-    if user_repo.get_by_nickname(payload.nickname):
-        raise HTTPException(status_code=400, detail="Nickname already exists")
-    
+#     if user_repo.get_by_nickname(payload.nickname):
+#         raise HTTPException(status_code=400, detail="Nickname already exists")
+#     
     # Parse birth_date if provided
-    birth_date_obj = None
-    if payload.birth_date:
-        try:
-            from datetime import datetime
-            birth_date_obj = datetime.strptime(payload.birth_date, "%Y-%m-%d").date()
-            
+#     birth_date_obj = None
+#     if payload.birth_date:
+#         try:
+#             from datetime import datetime
+#             birth_date_obj = datetime.strptime(payload.birth_date, "%Y-%m-%d").date()
+#             
             # Validate birth_date
-            today = date.today()
-            if birth_date_obj > today:
-                raise HTTPException(status_code=400, detail="Birth date cannot be in the future")
-            age = today.year - birth_date_obj.year - (
-                (today.month, today.day) < (birth_date_obj.month, birth_date_obj.day)
-            )
-            if age > 120:
-                raise HTTPException(status_code=400, detail="Birth date is not valid")
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid birth date format. Use YYYY-MM-DD")
-    
+#             today = date.today()
+#             if birth_date_obj > today:
+#                 raise HTTPException(status_code=400, detail="Birth date cannot be in the future")
+#             age = today.year - birth_date_obj.year - (
+#                 (today.month, today.day) < (birth_date_obj.month, birth_date_obj.day)
+#             )
+#             if age > 120:
+#                 raise HTTPException(status_code=400, detail="Birth date is not valid")
+#         except ValueError:
+#             raise HTTPException(status_code=400, detail="Invalid birth date format. Use YYYY-MM-DD")
+#     
     # Create user
-    user = user_repo.create({
-        "id": generate_user_pk(),
-        "name": payload.nickname,
-        "nickname": payload.nickname,
-        "email": payload.email,
-        "birth_date": birth_date_obj,
-        "gender": payload.gender,
-        "avatar_text": "카카오 로그인 사용자"
-    })
-    
+#     user = user_repo.create({
+#         "id": generate_user_pk(),
+#         "name": payload.nickname,
+#         "nickname": payload.nickname,
+#         "email": payload.email,
+#         "birth_date": birth_date_obj,
+#         "gender": payload.gender,
+#         "avatar_text": "카카오 로그인 사용자"
+#     })
+#     
     # Create auth record
-    auth_repo.create({
-        "user_id": user.id,
-        "provider": payload.provider,
-        "provider_user_id": payload.kakao_id,
-        "email": payload.email
-    })
-    
-    return UserResponse(
-        id=user.id,
-        name=user.name,
-        user_id=user.user_id,
-        nickname=user.nickname,
-        email=user.email,
-        birth_date=user.birth_date,
-        gender=user.gender,
-        avatar_text=user.avatar_text,
-        created_at=user.created_at,
-    )
-
-
+#     auth_repo.create({
+#         "user_id": user.id,
+#         "provider": payload.provider,
+#         "provider_user_id": payload.kakao_id,
+#         "email": payload.email
+#     })
+#     
+#     user_response = UserResponse(
+#         id=user.id,
+#         name=user.name,
+#         user_id=user.user_id,
+#         nickname=user.nickname,
+#         email=user.email,
+#         birth_date=user.birth_date,
+#         gender=user.gender,
+#         avatar_text=user.avatar_text,
+#         created_at=user.created_at,
+#     )
+#     access_token = _issue_tokens(user, db, response)
+#     return AuthTokenResponse(access_token=access_token, user=user_response)
+# 
+# 
 @router.post("/signup", response_model=UserResponse, status_code=201)
 def signup(payload: UserSignupRequest, db: Session = Depends(get_db)):
     """Create a local user account"""
@@ -275,8 +330,8 @@ def signup(payload: UserSignupRequest, db: Session = Depends(get_db)):
     )
 
 
-@router.post("/login", response_model=UserResponse)
-def login(payload: UserLoginRequest, db: Session = Depends(get_db)):
+@router.post("/login", response_model=AuthTokenResponse)
+def login(payload: UserLoginRequest, response: Response, db: Session = Depends(get_db)):
     """Login with user_id and password"""
     user_repo = UserRepository(db)
     user = user_repo.get_by_user_id(payload.user_id)
@@ -287,7 +342,7 @@ def login(payload: UserLoginRequest, db: Session = Depends(get_db)):
     if not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    return UserResponse(
+    user_response = UserResponse(
         id=user.id,
         name=user.name,
         user_id=user.user_id,
@@ -298,6 +353,38 @@ def login(payload: UserLoginRequest, db: Session = Depends(get_db)):
         avatar_text=user.avatar_text,
         created_at=user.created_at,
     )
+    access_token = _issue_tokens(user, db, response)
+    return AuthTokenResponse(access_token=access_token, user=user_response)
+
+
+@router.post("/refresh", response_model=AccessTokenResponse)
+def refresh_access_token(request: Request, response: Response, db: Session = Depends(get_db)):
+    """Issue a new access token using refresh token cookie"""
+    refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="Refresh token missing")
+
+    payload = decode_token(refresh_token, expected_type="refresh")
+    token_hash = hash_token(refresh_token)
+    repo = RefreshTokenRepository(db)
+    stored = repo.get_by_hash(token_hash)
+    if not stored or stored.revoked_at is not None:
+        raise HTTPException(status_code=401, detail="Refresh token revoked")
+    if stored.expires_at and stored.expires_at.replace(tzinfo=None) < datetime.utcnow():
+        raise HTTPException(status_code=401, detail="Refresh token expired")
+
+    # Rotate refresh token
+    repo.revoke(stored)
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+
+    user = UserRepository(db).get(user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    new_access_token = _issue_tokens(user, db, response)
+    return AccessTokenResponse(access_token=new_access_token)
 
 
 @router.post("/password", response_model=MessageResponse)
@@ -326,6 +413,15 @@ def change_password(payload: PasswordChangeRequest, db: Session = Depends(get_db
 
 
 @router.post("/logout")
-def logout():
+def logout(request: Request, response: Response, db: Session = Depends(get_db)):
     """Logout user"""
+    refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
+    if refresh_token:
+        token_hash = hash_token(refresh_token)
+        repo = RefreshTokenRepository(db)
+        stored = repo.get_by_hash(token_hash)
+        if stored and stored.revoked_at is None:
+            repo.revoke(stored)
+
+    _clear_refresh_cookie(response)
     return MessageResponse(message="Logged out successfully")

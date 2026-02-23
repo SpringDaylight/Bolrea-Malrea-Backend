@@ -15,6 +15,7 @@ from db import get_db
 from models import QuestionHistory
 from repositories.user import UserRepository
 from schemas import DailyQuestionAnswerRequest, DailyQuestionResponse, MessageResponse
+from api.deps import get_current_user_optional
 
 
 router = APIRouter(prefix="/api/questions", tags=["questions"])
@@ -51,11 +52,15 @@ def _get_question(index: int) -> str:
 
 @router.get("/today", response_model=DailyQuestionResponse)
 def get_today_question(
-    user_id: str = Query(..., description="User ID"),
+    user_id: str | None = Query(None, description="User ID"),
+    current_user=Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
     """Get today's question (must answer to move forward)."""
-    user = UserRepository(db).get(user_id)
+    resolved_user_id = current_user.id if current_user else user_id
+    if not resolved_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    user = UserRepository(db).get(resolved_user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -77,13 +82,17 @@ def get_today_question(
 @router.post("/today", response_model=MessageResponse)
 def submit_today_answer(
     payload: DailyQuestionAnswerRequest,
+    current_user=Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
     """Submit today's answer and grant rewards."""
     if not payload.answer or not payload.answer.strip():
         raise HTTPException(status_code=400, detail="Answer is required")
 
-    user = UserRepository(db).get(payload.user_id)
+    resolved_user_id = current_user.id if current_user else payload.user_id
+    if not resolved_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    user = UserRepository(db).get(resolved_user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 

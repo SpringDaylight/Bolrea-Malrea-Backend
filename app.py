@@ -287,9 +287,41 @@ def get_movie_vectors_batch_endpoint(body: dict) -> dict:
 
 @app.post("/predict/satisfaction")
 def predict_satisfaction_endpoint(body: dict) -> dict:
+    """
+    만족도 예측 API
+    - user_id가 있으면: DB에서 UserPreference 조회
+    - user_id가 없으면: body의 user_profile 사용 (하위 호환성)
+    
+    TODO: JWT 인증 추가 시 토큰에서 user_id 추출
+    """
     try:
+        from db import SessionLocal
+        from models import UserPreference
+        
+        # user_id가 있으면 DB에서 조회
+        user_id = body.get("user_id")
+        if user_id:
+            db = SessionLocal()
+            try:
+                user_pref = db.query(UserPreference).filter(
+                    UserPreference.user_id == user_id
+                ).first()
+                
+                if not user_pref or not user_pref.preference_vector_json:
+                    raise HTTPException(status_code=404, detail="사용자 선호도를 찾을 수 없습니다")
+                
+                # DB에서 가져온 프로필로 교체
+                body["user_profile"] = user_pref.preference_vector_json
+                body["dislike_tags"] = user_pref.dislikes or []
+                body["boost_tags"] = user_pref.boost_tags or []
+            finally:
+                db.close()
+        
+        # 기존 로직 실행
         body = validate_request("a3_predict_request.json", body)
         return predict_satisfaction(body)
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

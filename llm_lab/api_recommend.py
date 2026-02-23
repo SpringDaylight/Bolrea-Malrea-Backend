@@ -37,7 +37,7 @@ class ExplainRequest(BaseModel):
 
 class SatisfactionRequest(BaseModel):
     movie_id: int
-    user_id: Optional[int] = None  # 로그인한 사용자 ID (선택)
+    user_id: Optional[str] = None  # 로그인한 사용자 ID (문자열 UUID)
 
 
 class Movie(BaseModel):
@@ -171,6 +171,12 @@ async def calculate_satisfaction(request: SatisfactionRequest):
         from models import UserPreference, MovieVector
         from ml.model_sample.analysis.cal_sim import calculate_satisfaction_probability_improved
         
+        # 디버깅 로그
+        print(f"🔍 [Satisfaction] Request received:")
+        print(f"   - movie_id: {request.movie_id}")
+        print(f"   - user_id: {request.user_id}")
+        print(f"   - user_id type: {type(request.user_id)}")
+        
         db = SessionLocal()
         
         try:
@@ -184,16 +190,20 @@ async def calculate_satisfaction(request: SatisfactionRequest):
             
             # 사용자 선호도 조회 (user_id가 있으면)
             if request.user_id:
+                print(f"✅ [Satisfaction] user_id 있음, DB 조회 시작: {request.user_id}")
                 user_pref = db.query(UserPreference).filter(
                     UserPreference.user_id == request.user_id
                 ).first()
                 
                 if not user_pref or not user_pref.preference_vector_json:
+                    print(f"❌ [Satisfaction] UserPreference 없음")
                     raise HTTPException(status_code=404, detail="사용자 선호도를 찾을 수 없습니다")
                 
+                print(f"✅ [Satisfaction] UserPreference 찾음")
                 user_profile = user_pref.preference_vector_json
             else:
                 # 로그인하지 않은 경우 에러
+                print(f"❌ [Satisfaction] user_id 없음 - 401 반환")
                 raise HTTPException(status_code=401, detail="로그인이 필요합니다")
             
             # 영화 프로필 구성
@@ -207,7 +217,7 @@ async def calculate_satisfaction(request: SatisfactionRequest):
             result = calculate_satisfaction_probability_improved(
                 user_profile=user_profile,
                 movie_profile=movie_profile,
-                dislikes=user_pref.dislikes or [],
+                dislikes=user_pref.dislike_tags or [],  # ✅ dislike_tags로 수정
                 boost_tags=user_pref.boost_tags or [],
                 use_sigmoid=True,
                 sigmoid_k=6.0,

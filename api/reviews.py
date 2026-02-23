@@ -63,6 +63,7 @@ def create_review(
     from domain.a1_preference import analyze_preference
     
     repo = ReviewRepository(db)
+    user_id = current_user.id
     
     # Check if user already reviewed this movie
     existing = repo.get_user_review_for_movie(user_id, review.movie_id)
@@ -452,4 +453,3 @@ def toggle_comment_like(
         likes_count=updated.likes_count,
         dislikes_count=updated.dislikes_count,
     )
-    user_id = current_user.id

@@ -38,6 +38,15 @@ RDS_USER = os.getenv("RDS_USER", "postgres")
 # SSL Certificate path
 SSL_CERT_PATH = os.getenv("SSL_CERT_PATH", "/certs/global-bundle.pem")
 
+# JWT Configuration
+JWT_SECRET = os.getenv("JWT_SECRET", "")
+JWT_ALG = os.getenv("JWT_ALG", "HS256")
+ACCESS_TOKEN_EXPIRES_MIN = int(os.getenv("ACCESS_TOKEN_EXPIRES_MIN", "15"))
+REFRESH_TOKEN_EXPIRES_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRES_DAYS", "14"))
+JWT_COOKIE_SECURE = os.getenv("JWT_COOKIE_SECURE", "false").lower() == "true"
+JWT_COOKIE_SAMESITE = os.getenv("JWT_COOKIE_SAMESITE", "lax")
+REFRESH_TOKEN_COOKIE_NAME = os.getenv("REFRESH_TOKEN_COOKIE_NAME", "refresh_token")
+
 
 def get_rds_password() -> str:
     """

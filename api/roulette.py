@@ -14,6 +14,7 @@ from db import get_db
 from models import RouletteReward
 from repositories.user import UserRepository
 from schemas import RouletteSpinRequest, RouletteSpinResponse, RouletteStatusResponse, RouletteConfigResponse, RouletteConfigItem
+from api.deps import get_current_user_optional
 
 
 router = APIRouter(prefix="/api/roulette", tags=["roulette"])
@@ -56,10 +57,14 @@ def _pick_reward() -> Tuple[str, int, int]:
 
 @router.get("/status", response_model=RouletteStatusResponse)
 def get_roulette_status(
-    user_id: str = Query(..., description="User ID"),
+    user_id: str | None = Query(None, description="User ID"),
+    current_user=Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
-    user = UserRepository(db).get(user_id)
+    resolved_user_id = current_user.id if current_user else user_id
+    if not resolved_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    user = UserRepository(db).get(resolved_user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -73,9 +78,13 @@ def get_roulette_status(
 @router.post("/spin", response_model=RouletteSpinResponse)
 def spin_roulette(
     payload: RouletteSpinRequest,
+    current_user=Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
-    user = UserRepository(db).get(payload.user_id)
+    resolved_user_id = current_user.id if current_user else payload.user_id
+    if not resolved_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    user = UserRepository(db).get(resolved_user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 

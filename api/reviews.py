@@ -14,6 +14,13 @@ from schemas import (
 from repositories.review import ReviewRepository
 from repositories.movie import MovieRepository
 from repositories.watched import WatchedMovieRepository
+from api.deps import get_current_user_optional
+
+
+def _resolve_user_id(current_user, user_id: str | None) -> str | None:
+    if current_user:
+        return current_user.id
+    return user_id
 
 router = APIRouter(prefix="/api/reviews", tags=["reviews"])
 
@@ -22,6 +29,7 @@ router = APIRouter(prefix="/api/reviews", tags=["reviews"])
 def get_review(
     review_id: int,
     user_id: Optional[str] = Query(None, description="User ID"),
+    current_user=Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 ):
     """Get review by ID with counts"""
@@ -31,8 +39,9 @@ def get_review(
     if not result:
         raise HTTPException(status_code=404, detail="Review not found")
     
+    viewer_user_id = _resolve_user_id(current_user, user_id)
     review = result["review"]
-    if not review.is_public and review.user_id != user_id:
+    if not review.is_public and review.user_id != viewer_user_id:
         raise HTTPException(status_code=404, detail="Review not found")
 
     return ReviewResponse(
@@ -53,7 +62,8 @@ def get_review(
 @router.post("", response_model=ReviewResponse, status_code=201)
 def create_review(
     review: ReviewCreate,
-    user_id: str = Query(..., description="User ID"),
+    user_id: str | None = Query(None, description="User ID"),
+    current_user=Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 ):
     """Create a new review"""
@@ -61,9 +71,13 @@ def create_review(
     from domain.a1_preference import analyze_preference
     
     repo = ReviewRepository(db)
+
+    resolved_user_id = _resolve_user_id(current_user, user_id)
+    if not resolved_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
     
     # Check if user already reviewed this movie
-    existing = repo.get_user_review_for_movie(user_id, review.movie_id)
+    existing = repo.get_user_review_for_movie(resolved_user_id, review.movie_id)
     if existing:
         raise HTTPException(
             status_code=400,
@@ -71,19 +85,19 @@ def create_review(
         )
     
     review_data = review.model_dump()
-    review_data["user_id"] = user_id
+    review_data["user_id"] = resolved_user_id
     
     db_review = repo.create(review_data)
     MovieRepository(db).recalc_avg_rating(db_review.movie_id)
     # Ensure watched_movies has this movie for the user
     watched_repo = WatchedMovieRepository(db)
-    if not watched_repo.get(user_id, db_review.movie_id):
-        watched_repo.create(user_id, db_review.movie_id)
+    if not watched_repo.get(resolved_user_id, db_review.movie_id):
+        watched_repo.create(resolved_user_id, db_review.movie_id)
     
     # 사용자 선호도 업데이트 (리뷰 기반)
     try:
         # 사용자의 모든 리뷰 가져오기
-        user_reviews = repo.get_by_user(user_id, skip=0, limit=100)
+        user_reviews = repo.get_by_user(resolved_user_id, skip=0, limit=100)
         
         # 리뷰 내용을 기반으로 선호도 분석
         review_texts = []
@@ -111,7 +125,7 @@ def create_review(
             }
             
             pref_repo.upsert(
-                user_id=user_id,
+                user_id=resolved_user_id,
                 preference_vector_json=preference_vector_json,
                 boost_tags=user_profile.get("boost_tags", []),
                 dislike_tags=user_profile.get("dislike_tags", []),
@@ -143,6 +157,7 @@ def create_review(
 def update_review(
     review_id: int,
     review: ReviewUpdate,
+    current_user=Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 ):
     """Update a review"""
@@ -152,6 +167,12 @@ def update_review(
     repo = ReviewRepository(db)
     
     review_data = review.model_dump(exclude_unset=True)
+    if current_user:
+        existing = repo.get(review_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail="Review not found")
+        if existing.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Not allowed to edit this review")
     db_review = repo.update(review_id, review_data)
     
     if not db_review:
@@ -215,13 +236,22 @@ def update_review(
 
 
 @router.delete("/{review_id}", response_model=MessageResponse)
-def delete_review(review_id: int, db: Session = Depends(get_db)):
+def delete_review(
+    review_id: int,
+    user_id: str | None = Query(None, description="User ID"),
+    current_user=Depends(get_current_user_optional),
+    db: Session = Depends(get_db)
+):
     """Delete a review"""
     repo = ReviewRepository(db)
     
     review = repo.get(review_id)
     if not review:
         raise HTTPException(status_code=404, detail="Review not found")
+
+    resolved_user_id = _resolve_user_id(current_user, user_id)
+    if resolved_user_id and review.user_id != resolved_user_id:
+        raise HTTPException(status_code=403, detail="Not allowed to delete this review")
 
     repo.delete(review_id)
     MovieRepository(db).recalc_avg_rating(review.movie_id)
@@ -232,18 +262,22 @@ def delete_review(review_id: int, db: Session = Depends(get_db)):
 @router.post("/{review_id}/likes", response_model=LikeToggleResponse)
 def toggle_like(
     review_id: int,
-    user_id: str = Query(..., description="User ID"),
+    user_id: str | None = Query(None, description="User ID"),
     is_like: bool = Query(True, description="True for like, False for dislike"),
+    current_user=Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 ):
     """Toggle like/dislike on a review"""
     repo = ReviewRepository(db)
     
+    resolved_user_id = _resolve_user_id(current_user, user_id)
+    if not resolved_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
     review = repo.get(review_id)
-    if not review or (not review.is_public and review.user_id != user_id):
+    if not review or (not review.is_public and review.user_id != resolved_user_id):
         raise HTTPException(status_code=404, detail="Review not found")
 
-    if not repo.toggle_like(review_id, user_id, is_like):
+    if not repo.toggle_like(review_id, resolved_user_id, is_like):
         raise HTTPException(status_code=404, detail="Review not found")
     
     action = "liked" if is_like else "disliked"
@@ -263,6 +297,7 @@ def toggle_like(
 def get_comments(
     review_id: int,
     user_id: Optional[str] = Query(None, description="User ID"),
+    current_user=Depends(get_current_user_optional),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db)
@@ -270,15 +305,16 @@ def get_comments(
     """Get comments for a review"""
     repo = ReviewRepository(db)
     
+    viewer_user_id = _resolve_user_id(current_user, user_id)
     review = repo.get(review_id)
-    if not review or (not review.is_public and review.user_id != user_id):
+    if not review or (not review.is_public and review.user_id != viewer_user_id):
         raise HTTPException(status_code=404, detail="Review not found")
     
     comments = repo.get_comments(
         review_id,
         skip=skip,
         limit=limit,
-        viewer_user_id=user_id,
+        viewer_user_id=viewer_user_id,
         review_owner_id=review.user_id,
     )
     
@@ -302,14 +338,18 @@ def get_comments(
 def create_comment(
     review_id: int,
     comment: CommentCreate,
-    user_id: str = Query(..., description="User ID"),
+    user_id: str | None = Query(None, description="User ID"),
+    current_user=Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 ):
     """Add a comment to a review"""
     repo = ReviewRepository(db)
     
+    resolved_user_id = _resolve_user_id(current_user, user_id)
+    if not resolved_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
     review = repo.get(review_id)
-    if not review or (not review.is_public and review.user_id != user_id):
+    if not review or (not review.is_public and review.user_id != resolved_user_id):
         raise HTTPException(status_code=404, detail="Review not found")
 
     if comment.parent_comment_id is not None:
@@ -319,7 +359,7 @@ def create_comment(
     
     db_comment = repo.add_comment(
         review_id,
-        user_id,
+        resolved_user_id,
         comment.content,
         parent_comment_id=comment.parent_comment_id,
         is_public=comment.is_public,
@@ -345,7 +385,8 @@ def create_comment(
 def update_comment(
     comment_id: int,
     payload: CommentUpdate,
-    user_id: str = Query(..., description="User ID"),
+    user_id: str | None = Query(None, description="User ID"),
+    current_user=Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 ):
     """Update comment content"""
@@ -353,7 +394,10 @@ def update_comment(
     existing = repo.get_comment(comment_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Comment not found")
-    if existing.user_id != user_id:
+    resolved_user_id = _resolve_user_id(current_user, user_id)
+    if not resolved_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if existing.user_id != resolved_user_id:
         raise HTTPException(status_code=403, detail="Not allowed to edit this comment")
 
     db_comment = repo.update_comment(comment_id, payload.content, payload.is_public)
@@ -380,7 +424,8 @@ def update_comment(
 @router.delete("/comments/{comment_id}", response_model=MessageResponse)
 def delete_comment(
     comment_id: int,
-    user_id: str = Query(..., description="User ID"),
+    user_id: str | None = Query(None, description="User ID"),
+    current_user=Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 ):
     """Delete a comment"""
@@ -388,7 +433,10 @@ def delete_comment(
     existing = repo.get_comment(comment_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Comment not found")
-    if existing.user_id != user_id:
+    resolved_user_id = _resolve_user_id(current_user, user_id)
+    if not resolved_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if existing.user_id != resolved_user_id:
         raise HTTPException(status_code=403, detail="Not allowed to delete this comment")
 
     deleted = repo.delete_comment(comment_id)
@@ -402,13 +450,17 @@ def delete_comment(
 @router.post("/comments/{comment_id}/likes", response_model=CommentLikeToggleResponse)
 def toggle_comment_like(
     comment_id: int,
-    user_id: str = Query(..., description="User ID"),
+    user_id: str | None = Query(None, description="User ID"),
     is_like: bool = Query(True, description="True for like, False for dislike"),
+    current_user=Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 ):
     """Toggle like/dislike on a comment"""
     repo = ReviewRepository(db)
 
+    resolved_user_id = _resolve_user_id(current_user, user_id)
+    if not resolved_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
     comment = repo.get_comment(comment_id)
     if not comment:
         raise HTTPException(status_code=404, detail="Comment not found")
@@ -417,13 +469,13 @@ def toggle_comment_like(
     if not review:
         raise HTTPException(status_code=404, detail="Review not found")
 
-    if not review.is_public and review.user_id != user_id:
+    if not review.is_public and review.user_id != resolved_user_id:
         raise HTTPException(status_code=404, detail="Review not found")
 
-    if not comment.is_public and comment.user_id != user_id and review.user_id != user_id:
+    if not comment.is_public and comment.user_id != resolved_user_id and review.user_id != resolved_user_id:
         raise HTTPException(status_code=404, detail="Comment not found")
 
-    if not repo.toggle_comment_like(comment_id, user_id, is_like):
+    if not repo.toggle_comment_like(comment_id, resolved_user_id, is_like):
         raise HTTPException(status_code=404, detail="Comment not found")
 
     action = "liked" if is_like else "disliked"
@@ -437,3 +489,6 @@ def toggle_comment_like(
         likes_count=updated.likes_count,
         dislikes_count=updated.dislikes_count,
     )
+    resolved_user_id = _resolve_user_id(current_user, user_id)
+    if not resolved_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")

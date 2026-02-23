@@ -81,6 +81,15 @@ class PasswordChangeRequest(BaseSchema):
     new_password_confirm: str
 
 
+class AccessTokenResponse(BaseSchema):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class AuthTokenResponse(AccessTokenResponse):
+    user: "UserResponse"
+
+
 class DailyQuestionResponse(BaseSchema):
     answered: bool
     question: Optional[str] = None
@@ -326,3 +335,6 @@ class CommentLikeToggleResponse(BaseSchema):
 class ErrorResponse(BaseSchema):
     error: str
     detail: Optional[str] = None
+
+
+AuthTokenResponse.model_rebuild()

@@ -88,6 +88,7 @@ class Movie(Base):
     poster_url = Column(String, nullable=True)
     avg_rating = Column(Numeric(2, 1), nullable=True, comment="Average rating (0.5 steps)")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    keywords = Column(JSONB, nullable=True, comment="한국어 키워드 (JSONB)")
 
     # Relationships
     genres = relationship("MovieGenre", back_populates="movie", cascade="all, delete-orphan")

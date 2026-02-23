@@ -236,7 +236,19 @@ def get_user_wordcloud(
     # emotion_scores: {"감동적이에요": 0.85, ...}
     emotion_scores: dict = pref_vector.get("emotion_scores", {})
 
-    FONT_PATH = "C:/Windows/Fonts/malgun.ttf"
+    import platform
+    import os as _os
+    _FONT_CANDIDATES = [
+        "C:/Windows/Fonts/malgun.ttf",       # Windows
+        "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",   # Ubuntu (nanum-font)
+        "/usr/share/fonts/nanum/NanumGothic.ttf",             # Amazon Linux
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",  # Noto CJK
+        "/Library/Fonts/AppleGothic.ttf",    # macOS
+    ]
+    FONT_PATH = next(
+        (p for p in _FONT_CANDIDATES if _os.path.exists(p)),
+        None  # 없으면 None → wordcloud 기본폰트 사용 (한글 깨질 수 있음)
+    )
 
     def make_wc_from_freq(freq: dict, colormap: str, width=600, height=400):
         """주파수 딕셔너리로 워드클라우드 생성"""

@@ -100,3 +100,38 @@ class MovieVectorRepository(BaseRepository[MovieVector]):
     def count_all(self) -> int:
         """Count total movie vectors"""
         return self.db.query(MovieVector).count()
+    
+    def get_all_with_movie_info(self) -> List[dict]:
+        """
+        Get all movie vectors with movie information
+        
+        Returns:
+            List of dictionaries containing vector and movie data
+        """
+        from models import Movie
+        
+        results = (
+            self.db.query(MovieVector, Movie)
+            .join(Movie, MovieVector.movie_id == Movie.id)
+            .all()
+        )
+        
+        output = []
+        for vector, movie in results:
+            output.append({
+                "movie_id": movie.id,
+                "title": movie.title,
+                "genres": [g.genre for g in movie.genres],
+                "release_year": movie.release,
+                "poster_url": movie.poster_url,
+                "avg_rating": movie.avg_rating,
+                "synopsis": movie.synopsis,
+                "emotion_scores": vector.emotion_scores,
+                "narrative_traits": vector.narrative_traits,
+                "direction_mood": vector.direction_mood,
+                "character_relationship": vector.character_relationship,
+                "ending_preference": vector.ending_preference,
+                "embedding_vector": vector.embedding_vector
+            })
+        
+        return output

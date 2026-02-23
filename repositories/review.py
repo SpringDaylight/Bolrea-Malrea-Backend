@@ -5,7 +5,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_
 
-from models import Review, ReviewLike, Comment, User
+from models import Review, ReviewLike, Comment, CommentLike, User
 from repositories.base import BaseRepository
 
 
@@ -135,6 +135,44 @@ class ReviewRepository(BaseRepository[Review]):
                 review.likes_count += 1
             else:
                 review.dislikes_count += 1
+
+        self.db.commit()
+        return True
+
+    def toggle_comment_like(self, comment_id: int, user_id: str, is_like: bool = True) -> bool:
+        """Toggle like/dislike on a comment and update counters"""
+        comment = self.db.query(Comment).filter(Comment.id == comment_id).first()
+        if not comment:
+            return False
+
+        existing_like = (
+            self.db.query(CommentLike)
+            .filter(CommentLike.comment_id == comment_id, CommentLike.user_id == user_id)
+            .first()
+        )
+
+        if existing_like:
+            if existing_like.is_like == is_like:
+                self.db.delete(existing_like)
+                if is_like:
+                    comment.likes_count = max(0, comment.likes_count - 1)
+                else:
+                    comment.dislikes_count = max(0, comment.dislikes_count - 1)
+            else:
+                if existing_like.is_like:
+                    comment.likes_count = max(0, comment.likes_count - 1)
+                    comment.dislikes_count += 1
+                else:
+                    comment.dislikes_count = max(0, comment.dislikes_count - 1)
+                    comment.likes_count += 1
+                existing_like.is_like = is_like
+        else:
+            new_like = CommentLike(comment_id=comment_id, user_id=user_id, is_like=is_like)
+            self.db.add(new_like)
+            if is_like:
+                comment.likes_count += 1
+            else:
+                comment.dislikes_count += 1
 
         self.db.commit()
         return True

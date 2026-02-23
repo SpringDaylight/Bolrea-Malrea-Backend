@@ -54,7 +54,13 @@ def get_movies(
     
     # Convert to response format
     movie_responses = []
-    for movie in movies:
+    for movie, reviews_count in movies:
+        # 한국어 keywords 사용
+        if movie.keywords and isinstance(movie.keywords, list):
+            tags = movie.keywords[:8]
+        else:
+            tags = [t.tag for t in movie.tags][:8]
+
         movie_dict = {
             "id": movie.id,
             "title": movie.title,
@@ -65,17 +71,17 @@ def get_movies(
             "avg_rating": movie.avg_rating,
             "created_at": movie.created_at,
             "genres": [g.genre for g in movie.genres],
-            "tags": [t.tag for t in movie.tags]
+            "tags": tags,
+            "reviews_count": reviews_count
         }
         movie_responses.append(MovieResponse(**movie_dict))
-    
+
     return MovieListResponse(
         movies=movie_responses,
         total=total,
         page=page,
         page_size=page_size
     )
-
 
 @router.get("/{movie_id}", response_model=MovieResponse)
 def get_movie(movie_id: int, db: Session = Depends(get_db)):
@@ -85,6 +91,13 @@ def get_movie(movie_id: int, db: Session = Depends(get_db)):
     
     if not movie:
         raise HTTPException(status_code=404, detail="Movie not found")
+    
+    # 한국어 keywords 사용 (JSONB 컬럼)
+    if movie.keywords and isinstance(movie.keywords, list):
+        tags = movie.keywords[:10]  # 최대 10개
+    else:
+        # fallback: TMDB 영어 태그
+        tags = [t.tag for t in movie.tags][:10]
     
     return MovieResponse(
         id=movie.id,
@@ -96,7 +109,7 @@ def get_movie(movie_id: int, db: Session = Depends(get_db)):
         avg_rating=movie.avg_rating,
         created_at=movie.created_at,
         genres=[g.genre for g in movie.genres],
-        tags=[t.tag for t in movie.tags]
+        tags=tags
     )
 
 

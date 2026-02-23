@@ -3,6 +3,8 @@ A-4: 설명 가능한 추천
 만족 확률 결과를 자연어로 설명
 """
 from typing import Dict, List
+import os
+import boto3
 
 
 def _generate_template_explanation(
@@ -93,13 +95,36 @@ def explain_prediction(payload: dict) -> dict:
         "breakdown": breakdown
     }
     
-    # 설명 생성
-    explanation = _generate_template_explanation(
-        prediction_result,
-        movie_title,
-        user_liked_tags,
-        user_disliked_tags
-    )
+    # LLM 기반 설명 생성 시도
+    try:
+        from ml.model_sample.analysis.description import generate_explanation, get_bedrock_client
+        
+        bedrock_client = get_bedrock_client()
+        if bedrock_client:
+            explanation = generate_explanation(
+                prediction_result=prediction_result,
+                movie_title=movie_title,
+                user_liked_tags=user_liked_tags,
+                user_disliked_tags=user_disliked_tags,
+                bedrock_client=bedrock_client
+            )
+        else:
+            # Bedrock 클라이언트 없으면 템플릿 사용
+            explanation = _generate_template_explanation(
+                prediction_result,
+                movie_title,
+                user_liked_tags,
+                user_disliked_tags
+            )
+    except Exception as e:
+        print(f"⚠️  LLM 설명 생성 실패, 템플릿 사용: {e}")
+        # LLM 실패 시 템플릿 fallback
+        explanation = _generate_template_explanation(
+            prediction_result,
+            movie_title,
+            user_liked_tags,
+            user_disliked_tags
+        )
     
     # 주요 요소 추출
     key_factors = []

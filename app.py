@@ -4,7 +4,7 @@ Main FastAPI application
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from api import movies, reviews, users, auth, gamification, cocktail, user_preferences, questions, roulette
+from api import movies, reviews, users, auth, gamification, cocktail, user_preferences, questions, roulette, group_recommend
 from llm_lab.api import router as llm_lab_router
 from llm_lab.api_recommend import router as llm_recommend_router
 from utils.validator import validate_request
@@ -48,6 +48,7 @@ app.include_router(cocktail.router)
 app.include_router(user_preferences.router)
 app.include_router(questions.router)
 app.include_router(roulette.router)
+app.include_router(group_recommend.router)
 app.include_router(llm_lab_router)
 app.include_router(llm_recommend_router)
 

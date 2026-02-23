@@ -604,6 +604,9 @@ JSON만 출력하세요:"""
                 "reason": reason  # LLM이 생성한 개별 이유
             })
         
+        # 최종 점수로 정렬 (높은 순)
+        recommendations.sort(key=lambda x: x.get('final_score', 0), reverse=True)
+        
         return {
             "recommendations": recommendations,
             "explanation": ranked_results.get('explanation', ''),

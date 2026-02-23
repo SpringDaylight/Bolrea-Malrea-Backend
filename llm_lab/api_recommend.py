@@ -35,6 +35,11 @@ class ExplainRequest(BaseModel):
     final_score: Optional[float] = None
 
 
+class SatisfactionRequest(BaseModel):
+    movie_id: int
+    user_id: Optional[int] = None  # 로그인한 사용자 ID (선택)
+
+
 class Movie(BaseModel):
     movie_id: int
     title: str
@@ -154,3 +159,73 @@ async def explain_recommendation(request: ExplainRequest):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"설명 생성 오류: {str(e)}")
+
+
+@router.post("/satisfaction")
+async def calculate_satisfaction(request: SatisfactionRequest):
+    """
+    사용자 취향과 영화 특성 간의 만족도 확률 계산 (개선된 버전)
+    """
+    try:
+        from db import SessionLocal
+        from models import UserPreference, MovieVector
+        from ml.model_sample.analysis.cal_sim import calculate_satisfaction_probability_improved
+        
+        db = SessionLocal()
+        
+        try:
+            # 영화 벡터 조회
+            movie_vector = db.query(MovieVector).filter(
+                MovieVector.movie_id == request.movie_id
+            ).first()
+            
+            if not movie_vector:
+                raise HTTPException(status_code=404, detail="영화 벡터를 찾을 수 없습니다")
+            
+            # 사용자 선호도 조회 (user_id가 있으면)
+            if request.user_id:
+                user_pref = db.query(UserPreference).filter(
+                    UserPreference.user_id == request.user_id
+                ).first()
+                
+                if not user_pref or not user_pref.preference_vector_json:
+                    raise HTTPException(status_code=404, detail="사용자 선호도를 찾을 수 없습니다")
+                
+                user_profile = user_pref.preference_vector_json
+            else:
+                # 로그인하지 않은 경우 에러
+                raise HTTPException(status_code=401, detail="로그인이 필요합니다")
+            
+            # 영화 프로필 구성
+            movie_profile = {
+                'emotion_scores': movie_vector.emotion_scores,
+                'narrative_traits': movie_vector.narrative_traits,
+                'ending_preference': movie_vector.ending_preference or {}
+            }
+            
+            # 만족도 확률 계산 (개선된 버전)
+            result = calculate_satisfaction_probability_improved(
+                user_profile=user_profile,
+                movie_profile=movie_profile,
+                dislikes=user_pref.dislikes or [],
+                boost_tags=user_pref.boost_tags or [],
+                use_sigmoid=True,
+                sigmoid_k=6.0,
+                sigmoid_x0=0.5
+            )
+            
+            return {
+                "movie_id": request.movie_id,
+                "satisfaction_probability": result['probability'],
+                "confidence": result['confidence'],
+                "breakdown": result['breakdown'],
+                "user_id": request.user_id
+            }
+            
+        finally:
+            db.close()
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"만족도 계산 오류: {str(e)}")

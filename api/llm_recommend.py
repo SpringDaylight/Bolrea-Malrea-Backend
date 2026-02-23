@@ -118,12 +118,16 @@ async def recommend_movies(request: RecommendRequest):
                 "ending_preference": vector_data["ending_preference"]
             }
             
-            # 만족 확률 계산
-            result = similarity.calculate_satisfaction_probability(
+            # 만족 확률 계산 (개선된 버전)
+            from ml.model_sample.analysis.cal_sim import calculate_satisfaction_probability_improved
+            result = calculate_satisfaction_probability_improved(
                 user_profile=user_profile,
                 movie_profile=movie_profile,
                 dislikes=user_profile.get("dislike_tags", []),
-                boost_tags=user_profile.get("boost_tags", [])
+                boost_tags=user_profile.get("boost_tags", []),
+                use_sigmoid=True,
+                sigmoid_k=6.0,
+                sigmoid_x0=0.5
             )
             
             recommendations.append({

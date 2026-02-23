@@ -4,7 +4,9 @@ Main FastAPI application
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from api import movies, reviews, users, auth, gamification, cocktail, user_preferences, questions, roulette, llm_recommend, group_recommend
+from api import movies, reviews, users, auth, gamification, cocktail, user_preferences, questions, roulette, group_recommend
+from llm_lab.api import router as llm_lab_router
+from llm_lab.api_recommend import router as llm_recommend_router
 from utils.validator import validate_request
 
 from domain.a1_preference import analyze_preference
@@ -19,7 +21,7 @@ from domain.a7_taste_map import build_taste_map
 app = FastAPI(
     title="Movie Recommendation API",
     description="정서·서사 기반 영화 취향 시뮬레이션 & 감성 검색 서비스",
-    version="1.1.7"
+    version="1.1.5"
 )
 
 # CORS middleware
@@ -46,8 +48,9 @@ app.include_router(cocktail.router)
 app.include_router(user_preferences.router)
 app.include_router(questions.router)
 app.include_router(roulette.router)
-app.include_router(llm_recommend.router)
 app.include_router(group_recommend.router)
+app.include_router(llm_lab_router)
+app.include_router(llm_recommend_router)
 
 
 @app.get("/")
@@ -285,9 +288,41 @@ def get_movie_vectors_batch_endpoint(body: dict) -> dict:
 
 @app.post("/predict/satisfaction")
 def predict_satisfaction_endpoint(body: dict) -> dict:
+    """
+    만족도 예측 API
+    - user_id가 있으면: DB에서 UserPreference 조회
+    - user_id가 없으면: body의 user_profile 사용 (하위 호환성)
+    
+    TODO: JWT 인증 추가 시 토큰에서 user_id 추출
+    """
     try:
+        from db import SessionLocal
+        from models import UserPreference
+        
+        # user_id가 있으면 DB에서 조회
+        user_id = body.get("user_id")
+        if user_id:
+            db = SessionLocal()
+            try:
+                user_pref = db.query(UserPreference).filter(
+                    UserPreference.user_id == user_id
+                ).first()
+                
+                if not user_pref or not user_pref.preference_vector_json:
+                    raise HTTPException(status_code=404, detail="사용자 선호도를 찾을 수 없습니다")
+                
+                # DB에서 가져온 프로필로 교체
+                body["user_profile"] = user_pref.preference_vector_json
+                body["dislike_tags"] = user_pref.dislikes or []
+                body["boost_tags"] = user_pref.boost_tags or []
+            finally:
+                db.close()
+        
+        # 기존 로직 실행
         body = validate_request("a3_predict_request.json", body)
         return predict_satisfaction(body)
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

@@ -17,29 +17,18 @@ from repositories.user import UserRepository
 from repositories.review import ReviewRepository
 from repositories.watched import WatchedMovieRepository
 from repositories.movie import MovieRepository
-from api.deps import get_current_user_optional
-
-
-def _resolve_user_id(current_user, user_id: str | None) -> str:
-    if current_user:
-        return current_user.id
-    if user_id:
-        return user_id
-    raise HTTPException(status_code=401, detail="Authentication required")
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
 
 @router.get("/me", response_model=UserResponse)
 def get_current_user(
-    user_id: str | None = Query(None, description="User ID"),
-    current_user=Depends(get_current_user_optional),
+    user_id: str = Query(..., description="User ID"),
     db: Session = Depends(get_db)
 ):
     """Get current user info"""
-    resolved_user_id = _resolve_user_id(current_user, user_id)
     repo = UserRepository(db)
-    user = repo.get(resolved_user_id)
+    user = repo.get(user_id)
     
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -117,16 +106,14 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
 @router.put("/me", response_model=UserResponse)
 def update_user(
     user: UserUpdate,
-    user_id: str | None = Query(None, description="User ID"),
-    current_user=Depends(get_current_user_optional),
+    user_id: str = Query(..., description="User ID"),
     db: Session = Depends(get_db)
 ):
     """Update current user"""
-    resolved_user_id = _resolve_user_id(current_user, user_id)
     repo = UserRepository(db)
     
     user_data = user.model_dump(exclude_unset=True)
-    db_user = repo.update(resolved_user_id, user_data)
+    db_user = repo.update(user_id, user_data)
     
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -148,37 +135,33 @@ def update_user(
 
 @router.delete("/me", response_model=MessageResponse)
 def delete_user(
-    user_id: str | None = Query(None, description="User ID"),
-    current_user=Depends(get_current_user_optional),
+    user_id: str = Query(..., description="User ID"),
     db: Session = Depends(get_db)
 ):
     """Delete current user account"""
-    resolved_user_id = _resolve_user_id(current_user, user_id)
     repo = UserRepository(db)
-    user = repo.get(resolved_user_id)
+    user = repo.get(user_id)
 
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    repo.delete(resolved_user_id)
+    repo.delete(user_id)
     return MessageResponse(message="User deleted successfully")
 
 
 @router.get("/me/reviews", response_model=ReviewListResponse)
 def get_user_reviews(
-    user_id: str | None = Query(None, description="User ID"),
-    current_user=Depends(get_current_user_optional),
+    user_id: str = Query(..., description="User ID"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db)
 ):
     """Get current user's reviews"""
-    resolved_user_id = _resolve_user_id(current_user, user_id)
     repo = ReviewRepository(db)
     skip = (page - 1) * page_size
     
-    reviews = repo.get_by_user(resolved_user_id, skip=skip, limit=page_size)
-    total = repo.count(filters={"user_id": resolved_user_id})
+    reviews = repo.get_by_user(user_id, skip=skip, limit=page_size)
+    total = repo.count(filters={"user_id": user_id})
     
     review_responses = []
     for review in reviews:
@@ -205,19 +188,17 @@ def get_user_reviews(
 
 @router.get("/me/watched", response_model=WatchedMovieListResponse)
 def get_watched_movies(
-    user_id: str | None = Query(None, description="User ID"),
-    current_user=Depends(get_current_user_optional),
+    user_id: str = Query(..., description="User ID"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db)
 ):
     """Get current user's watched movies"""
-    resolved_user_id = _resolve_user_id(current_user, user_id)
     repo = WatchedMovieRepository(db)
     skip = (page - 1) * page_size
 
-    items = repo.get_by_user(resolved_user_id, skip=skip, limit=page_size)
-    total = repo.count_by_user(resolved_user_id)
+    items = repo.get_by_user(user_id, skip=skip, limit=page_size)
+    total = repo.count_by_user(user_id)
 
     response_items = [
         WatchedMovieResponse(
@@ -235,18 +216,16 @@ def get_watched_movies(
 @router.post("/me/watched", response_model=WatchedMovieResponse, status_code=201)
 def add_watched_movie(
     payload: WatchedMovieCreate,
-    user_id: str | None = Query(None, description="User ID"),
-    current_user=Depends(get_current_user_optional),
+    user_id: str = Query(..., description="User ID"),
     db: Session = Depends(get_db)
 ):
     """Mark a movie as watched for current user"""
-    resolved_user_id = _resolve_user_id(current_user, user_id)
     movie_repo = MovieRepository(db)
     if not movie_repo.get(payload.movie_id):
         raise HTTPException(status_code=404, detail="Movie not found")
 
     repo = WatchedMovieRepository(db)
-    existing = repo.get(resolved_user_id, payload.movie_id)
+    existing = repo.get(user_id, payload.movie_id)
     if existing:
         movie = existing.movie
         return WatchedMovieResponse(
@@ -256,7 +235,7 @@ def add_watched_movie(
             watched_at=existing.watched_at,
         )
 
-    record = repo.create(resolved_user_id, payload.movie_id)
+    record = repo.create(user_id, payload.movie_id)
     db.refresh(record)
     movie = record.movie
     return WatchedMovieResponse(
@@ -270,14 +249,12 @@ def add_watched_movie(
 @router.delete("/me/watched/{movie_id}", response_model=MessageResponse)
 def remove_watched_movie(
     movie_id: int,
-    user_id: str | None = Query(None, description="User ID"),
-    current_user=Depends(get_current_user_optional),
+    user_id: str = Query(..., description="User ID"),
     db: Session = Depends(get_db)
 ):
     """Unmark a movie as watched for current user"""
-    resolved_user_id = _resolve_user_id(current_user, user_id)
     repo = WatchedMovieRepository(db)
-    deleted = repo.delete(resolved_user_id, movie_id)
+    deleted = repo.delete(user_id, movie_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Watched record not found")
 
@@ -286,14 +263,12 @@ def remove_watched_movie(
 
 @router.get("/me/taste-analysis", response_model=TasteAnalysisResponse)
 def get_taste_analysis(
-    user_id: str | None = Query(None, description="User ID"),
-    current_user=Depends(get_current_user_optional),
+    user_id: str = Query(..., description="User ID"),
     db: Session = Depends(get_db)
 ):
     """Get user's taste analysis"""
-    resolved_user_id = _resolve_user_id(current_user, user_id)
     repo = UserRepository(db)
-    taste = repo.get_taste_analysis(resolved_user_id)
+    taste = repo.get_taste_analysis(user_id)
     
     if not taste:
         raise HTTPException(

@@ -56,7 +56,6 @@ class User(Base):
     history = relationship("QuestionHistory", back_populates="user", cascade="all, delete-orphan")
     auth_accounts = relationship("UserAuth", back_populates="user", cascade="all, delete-orphan")
     roulette_rewards = relationship("RouletteReward", back_populates="user", cascade="all, delete-orphan")
-    refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
 
 
 class UserAuth(Base):
@@ -75,22 +74,7 @@ class UserAuth(Base):
     __table_args__ = (
         UniqueConstraint("provider", "provider_user_id", name="uq_user_auth_provider_user"),
         Index("ix_user_auth_provider_user", "provider", "provider_user_id"),
-    ) 
-
-
-class RefreshToken(Base):
-    """Refresh token storage"""
-    __tablename__ = "refresh_tokens"
-
-    id = Column(Integer, primary_key=True)
-    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    token_hash = Column(String, nullable=False, unique=True, index=True)
-    jti = Column(String, nullable=False, unique=True, index=True)
-    expires_at = Column(DateTime(timezone=True), nullable=False)
-    revoked_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-    user = relationship("User", back_populates="refresh_tokens")
+    )
 
 
 class Movie(Base):

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from db import get_db
+from api.deps import get_current_user, get_current_user_optional
 from schemas import (
     ReviewResponse, ReviewListResponse, ReviewCreate, ReviewUpdate,
     CommentResponse, CommentCreate, CommentUpdate, MessageResponse, LikeToggleResponse,
@@ -21,7 +22,7 @@ router = APIRouter(prefix="/api/reviews", tags=["reviews"])
 @router.get("/{review_id}", response_model=ReviewResponse)
 def get_review(
     review_id: int,
-    user_id: Optional[str] = Query(None, description="User ID"),
+    current_user=Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 ):
     """Get review by ID with counts"""
@@ -32,7 +33,8 @@ def get_review(
         raise HTTPException(status_code=404, detail="Review not found")
     
     review = result["review"]
-    if not review.is_public and review.user_id != user_id:
+    viewer_user_id = current_user.id if current_user else None
+    if not review.is_public and review.user_id != viewer_user_id:
         raise HTTPException(status_code=404, detail="Review not found")
 
     return ReviewResponse(
@@ -53,7 +55,7 @@ def get_review(
 @router.post("", response_model=ReviewResponse, status_code=201)
 def create_review(
     review: ReviewCreate,
-    user_id: str = Query(..., description="User ID"),
+    current_user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Create a new review"""
@@ -143,6 +145,7 @@ def create_review(
 def update_review(
     review_id: int,
     review: ReviewUpdate,
+    current_user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Update a review"""
@@ -215,13 +218,19 @@ def update_review(
 
 
 @router.delete("/{review_id}", response_model=MessageResponse)
-def delete_review(review_id: int, db: Session = Depends(get_db)):
+def delete_review(
+    review_id: int,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Delete a review"""
     repo = ReviewRepository(db)
     
     review = repo.get(review_id)
     if not review:
         raise HTTPException(status_code=404, detail="Review not found")
+    if review.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not allowed to delete this review")
 
     repo.delete(review_id)
     MovieRepository(db).recalc_avg_rating(review.movie_id)
@@ -232,7 +241,7 @@ def delete_review(review_id: int, db: Session = Depends(get_db)):
 @router.post("/{review_id}/likes", response_model=LikeToggleResponse)
 def toggle_like(
     review_id: int,
-    user_id: str = Query(..., description="User ID"),
+    current_user=Depends(get_current_user),
     is_like: bool = Query(True, description="True for like, False for dislike"),
     db: Session = Depends(get_db)
 ):
@@ -240,6 +249,7 @@ def toggle_like(
     repo = ReviewRepository(db)
     
     review = repo.get(review_id)
+    user_id = current_user.id
     if not review or (not review.is_public and review.user_id != user_id):
         raise HTTPException(status_code=404, detail="Review not found")
 
@@ -262,7 +272,7 @@ def toggle_like(
 @router.get("/{review_id}/comments", response_model=List[CommentResponse])
 def get_comments(
     review_id: int,
-    user_id: Optional[str] = Query(None, description="User ID"),
+    current_user=Depends(get_current_user_optional),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db)
@@ -270,15 +280,16 @@ def get_comments(
     """Get comments for a review"""
     repo = ReviewRepository(db)
     
+    viewer_user_id = current_user.id if current_user else None
     review = repo.get(review_id)
-    if not review or (not review.is_public and review.user_id != user_id):
+    if not review or (not review.is_public and review.user_id != viewer_user_id):
         raise HTTPException(status_code=404, detail="Review not found")
     
     comments = repo.get_comments(
         review_id,
         skip=skip,
         limit=limit,
-        viewer_user_id=user_id,
+        viewer_user_id=viewer_user_id,
         review_owner_id=review.user_id,
     )
     
@@ -302,12 +313,13 @@ def get_comments(
 def create_comment(
     review_id: int,
     comment: CommentCreate,
-    user_id: str = Query(..., description="User ID"),
+    current_user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Add a comment to a review"""
     repo = ReviewRepository(db)
     
+    user_id = current_user.id
     review = repo.get(review_id)
     if not review or (not review.is_public and review.user_id != user_id):
         raise HTTPException(status_code=404, detail="Review not found")
@@ -345,7 +357,7 @@ def create_comment(
 def update_comment(
     comment_id: int,
     payload: CommentUpdate,
-    user_id: str = Query(..., description="User ID"),
+    current_user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Update comment content"""
@@ -353,6 +365,7 @@ def update_comment(
     existing = repo.get_comment(comment_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Comment not found")
+    user_id = current_user.id
     if existing.user_id != user_id:
         raise HTTPException(status_code=403, detail="Not allowed to edit this comment")
 
@@ -380,7 +393,7 @@ def update_comment(
 @router.delete("/comments/{comment_id}", response_model=MessageResponse)
 def delete_comment(
     comment_id: int,
-    user_id: str = Query(..., description="User ID"),
+    current_user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Delete a comment"""
@@ -388,6 +401,7 @@ def delete_comment(
     existing = repo.get_comment(comment_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Comment not found")
+    user_id = current_user.id
     if existing.user_id != user_id:
         raise HTTPException(status_code=403, detail="Not allowed to delete this comment")
 
@@ -402,7 +416,7 @@ def delete_comment(
 @router.post("/comments/{comment_id}/likes", response_model=CommentLikeToggleResponse)
 def toggle_comment_like(
     comment_id: int,
-    user_id: str = Query(..., description="User ID"),
+    current_user=Depends(get_current_user),
     is_like: bool = Query(True, description="True for like, False for dislike"),
     db: Session = Depends(get_db)
 ):
@@ -417,6 +431,7 @@ def toggle_comment_like(
     if not review:
         raise HTTPException(status_code=404, detail="Review not found")
 
+    user_id = current_user.id
     if not review.is_public and review.user_id != user_id:
         raise HTTPException(status_code=404, detail="Review not found")
 
@@ -437,3 +452,4 @@ def toggle_comment_like(
         likes_count=updated.likes_count,
         dislikes_count=updated.dislikes_count,
     )
+    user_id = current_user.id

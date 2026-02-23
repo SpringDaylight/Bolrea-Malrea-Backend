@@ -38,6 +38,60 @@ RDS_USER = os.getenv("RDS_USER", "postgres")
 # SSL Certificate path
 SSL_CERT_PATH = os.getenv("SSL_CERT_PATH", "/certs/global-bundle.pem")
 
+# JWT Configuration
+JWT_SECRET_ARN = os.getenv(
+    "JWT_SECRET_ARN",
+    "arn:aws:secretsmanager:ap-northeast-2:416963226971:secret:movie-dev/jwt-secret"
+)
+JWT_ALG = os.getenv("JWT_ALG", "HS256")
+ACCESS_TOKEN_EXPIRES_MIN = int(os.getenv("ACCESS_TOKEN_EXPIRES_MIN", "15"))
+REFRESH_TOKEN_EXPIRES_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRES_DAYS", "14"))
+JWT_COOKIE_SECURE = os.getenv("JWT_COOKIE_SECURE", "false").lower() == "true"
+JWT_COOKIE_SAMESITE = os.getenv("JWT_COOKIE_SAMESITE", "lax")
+REFRESH_TOKEN_COOKIE_NAME = os.getenv("REFRESH_TOKEN_COOKIE_NAME", "refresh_token")
+
+
+def get_jwt_secret() -> str:
+    """
+    Retrieve JWT secret from environment or AWS Secrets Manager.
+    """
+    # First check for local override
+    local_secret = os.getenv("JWT_SECRET")
+    if local_secret:
+        print("Using JWT_SECRET from environment variable")
+        return local_secret
+
+    # Try Secrets Manager
+    try:
+        print(f"Attempting to retrieve JWT secret from Secrets Manager: {JWT_SECRET_ARN}")
+        client = boto3.client("secretsmanager", region_name=AWS_REGION)
+        response = client.get_secret_value(SecretId=JWT_SECRET_ARN)
+        secret_value = response.get("SecretString")
+        if not secret_value:
+            raise RuntimeError("SecretString is empty")
+
+        # If SecretString is JSON, try common keys
+        try:
+            parsed = json.loads(secret_value)
+            for key in ("JWT_SECRET", "jwt_secret", "secret", "value"):
+                if key in parsed and parsed[key]:
+                    print("Successfully retrieved JWT secret from Secrets Manager (JSON key)")
+                    return parsed[key]
+        except json.JSONDecodeError:
+            # plain string secret
+            pass
+
+        print("Successfully retrieved JWT secret from Secrets Manager")
+        return secret_value
+    except Exception as e:
+        print(f"ERROR: Failed to get JWT secret from Secrets Manager: {e}")
+        print(f"Secret ARN: {JWT_SECRET_ARN}")
+        print(f"AWS Region: {AWS_REGION}")
+        raise RuntimeError(f"Could not retrieve JWT secret. Check IRSA permissions and Secret ARN: {e}")
+
+
+JWT_SECRET = get_jwt_secret() if ENV.lower() != "local" else os.getenv("JWT_SECRET", "")
+
 
 def get_rds_password() -> str:
     """

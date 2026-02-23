@@ -215,6 +215,10 @@ def _build_factor_hints(
 
 
 def _enforce_factor_hint_coverage(explanation: str, factor_hints: Dict[str, str]) -> str:
+    """
+    핵심 힌트가 설명에 포함되지 않은 경우에만 보강
+    중복 방지를 위해 엄격하게 체크
+    """
     if not explanation:
         explanation = ""
     explanation = explanation.strip()
@@ -222,15 +226,55 @@ def _enforce_factor_hint_coverage(explanation: str, factor_hints: Dict[str, str]
     if not factor_hints:
         return explanation
 
-    # 모호한 포괄 표현이 나와도 핵심 힌트를 보강해서 구체화
-    vague_markers = ["정서적 측면", "서사적 측면", "결말 측면", "여러 측면"]
-    missing_hints = [h for h in factor_hints.values() if h and h not in explanation]
-    needs_append = bool(missing_hints) or any(m in explanation for m in vague_markers)
+    # 각 힌트의 핵심 키워드 추출 (더 포괄적으로)
+    def extract_keywords(hint: str) -> List[str]:
+        """힌트에서 핵심 키워드 추출"""
+        keywords = []
+        keyword_map = {
+            "감동": ["감동", "눈물", "울", "가슴"],
+            "여운": ["여운", "잔상", "기억"],
+            "따뜻": ["따뜻", "포근", "편안", "안정"],
+            "웃음": ["웃", "유쾌", "재미", "코믹"],
+            "긴장": ["긴장", "몰입", "집중", "긴박"],
+            "통쾌": ["통쾌", "시원", "해소", "카타르시스"],
+            "무겁": ["무겁", "가라앉", "우울", "침울"],
+            "반전": ["반전", "트위스트", "반전"],
+            "전개": ["전개", "흐름", "속도", "템포", "진행"],
+            "복선": ["복선", "떡밥", "암시"],
+            "해피": ["해피", "행복", "밝은"],
+            "열린": ["열린", "오픈", "여운"],
+            "비터": ["비터", "씁쓸", "아쉬운"]
+        }
+        
+        for key, synonyms in keyword_map.items():
+            if any(syn in hint for syn in synonyms):
+                keywords.extend(synonyms)
+        
+        return list(set(keywords))
 
-    if not needs_append:
+    # 설명에 이미 포함된 힌트 확인 (더 엄격하게)
+    missing_hints = []
+    for factor, hint in factor_hints.items():
+        if not hint:
+            continue
+        
+        # 힌트의 핵심 키워드가 설명에 하나라도 있으면 이미 언급된 것으로 간주
+        keywords = extract_keywords(hint)
+        if keywords:
+            already_mentioned = any(kw in explanation for kw in keywords)
+            if not already_mentioned:
+                missing_hints.append(hint)
+        else:
+            # 키워드 추출 실패 시 전체 문자열로 확인
+            if hint not in explanation:
+                missing_hints.append(hint)
+
+    # 모든 힌트가 이미 언급되었거나, 설명이 충분히 길면 추가하지 않음
+    if not missing_hints or len(explanation) > 100:
         return explanation
 
-    hint_text = " 그리고 ".join(missing_hints if missing_hints else list(factor_hints.values())[:2])
+    # 누락된 힌트만 추가 (하지만 매우 보수적으로)
+    hint_text = " 그리고 ".join(missing_hints)
     supplement = f"특히 {hint_text} 부분이 취향과 잘 맞아요."
 
     if not explanation:

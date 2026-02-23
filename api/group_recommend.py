@@ -270,20 +270,7 @@ async def recommend_group_v2(request: GroupRecommendRequest):
         # 사용자 프로필 생성
         user_profiles = [build_user_profile(u, taxonomy) for u in users]
         
-        # 디버그: 사용자 프로필 확인 (파일로 저장)
-        import json
-        debug_log_path = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)),
-            "cache", "group_debug.json"
-        )
-        debug_data = {
-            "users": [],
-            "taxonomy_keys": {
-                "emotion": list(taxonomy.get("emotion", {}).get("tags", []))[:5],
-                "story_flow": list(taxonomy.get("story_flow", {}).get("tags", []))[:5]
-            }
-        }
-        
+        # 디버그: 사용자 프로필 확인 (콘솔 출력만)
         print(f"   [DEBUG] 사용자 프로필 생성 완료:")
         for i, (u, up) in enumerate(zip(users, user_profiles)):
             emotion_sum = sum(up.get('emotion_scores', {}).values())
@@ -297,25 +284,8 @@ async def recommend_group_v2(request: GroupRecommendRequest):
             print(f"       emotion 샘플 키: {emotion_keys[:3]}")
             print(f"       narrative 샘플 키: {narrative_keys[:3]}")
             
-            debug_data["users"].append({
-                "name": u['name'],
-                "emotion_keys_count": len(emotion_keys),
-                "narrative_keys_count": len(narrative_keys),
-                "emotion_sum": emotion_sum,
-                "narrative_sum": narrative_sum,
-                "emotion_sample_keys": emotion_keys[:5],
-                "narrative_sample_keys": narrative_keys[:5],
-                "emotion_sample_values": {k: up['emotion_scores'][k] for k in emotion_keys[:5]},
-                "narrative_sample_values": {k: up['narrative_traits'][k] for k in narrative_keys[:5]}
-            })
-            
             if emotion_sum == 0 and narrative_sum == 0:
                 print(f"       ⚠️ 경고: 프로필이 비어있습니다!")
-        
-        # 디버그 데이터 저장
-        with open(debug_log_path, 'w', encoding='utf-8') as f:
-            json.dump(debug_data, f, indent=2, ensure_ascii=False)
-        print(f"   [DEBUG] 상세 로그 저장: {debug_log_path}")
         
         # Bedrock 클라이언트
         explainer_client = None

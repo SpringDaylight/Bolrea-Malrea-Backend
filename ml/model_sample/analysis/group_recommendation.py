@@ -190,6 +190,27 @@ def normalize_profile(profile: Dict[str, Any], taxonomy: Dict[str, Any]) -> Dict
     narrative_traits = {k: float((profile.get("narrative_traits", {}) or {}).get(k, 0.0)) for k in n_keys}
     ending_preference = {k: float((profile.get("ending_preference", {}) or {}).get(k, 0.0)) for k in ending_keys}
 
+    # Debug: Check if profile has the expected keys (only warn once per issue)
+    profile_emotion_keys = set((profile.get("emotion_scores", {}) or {}).keys())
+    profile_narrative_keys = set((profile.get("narrative_traits", {}) or {}).keys())
+    taxonomy_emotion_keys = set(e_keys)
+    taxonomy_narrative_keys = set(n_keys)
+    
+    # Check for non-zero values
+    emotion_nonzero = sum(1 for v in emotion_scores.values() if v != 0)
+    narrative_nonzero = sum(1 for v in narrative_traits.values() if v != 0)
+    
+    # Only warn if there's a key mismatch (not just zero values)
+    if emotion_nonzero == 0 or narrative_nonzero == 0:
+        matching_emotion = len(taxonomy_emotion_keys & profile_emotion_keys)
+        if matching_emotion < len(taxonomy_emotion_keys) * 0.5:  # Less than 50% match
+            print(f"[WARN] normalize_profile: Key mismatch detected")
+            print(f"  Taxonomy keys: {len(taxonomy_emotion_keys)} emotion, {len(taxonomy_narrative_keys)} narrative")
+            print(f"  Profile keys: {len(profile_emotion_keys)} emotion, {len(profile_narrative_keys)} narrative")
+            print(f"  Matching: {matching_emotion} emotion keys")
+            print(f"  Sample taxonomy: {list(taxonomy_emotion_keys)[:3]}")
+            print(f"  Sample profile: {list(profile_emotion_keys)[:3]}")
+
     return {
         "emotion_scores": emotion_scores,
         "narrative_traits": narrative_traits,

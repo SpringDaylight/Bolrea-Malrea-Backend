@@ -114,10 +114,25 @@ async def recommend_movies(request: RecommendRequest):
 @router.post("/explain")
 async def explain_recommendation(request: ExplainRequest):
     """
-    특정 영화 추천 이유를 LLM으로 상세 설명
+    특정 영화 추천 이유를 LLM으로 상세 설명 (캐싱 적용)
     """
     try:
         from llm_lab.async_client import AsyncLLMClient
+        from utils.cache import cache_get, cache_set
+        
+        # 캐시 키 생성: explanation:{user_input_hash}:{movie_title}
+        # user_input을 해시화하여 키 길이 제한
+        import hashlib
+        user_input_hash = hashlib.md5(request.user_input.encode()).hexdigest()[:16]
+        cache_key = f"explanation:{user_input_hash}:{request.movie_title}"
+        
+        # 캐시 확인
+        cached_result = cache_get(cache_key)
+        if cached_result:
+            print(f"✅ [Explain] Cache hit: {cache_key}")
+            return cached_result
+        
+        print(f"🔍 [Explain] Cache miss, generating: {cache_key}")
         
         llm_client = AsyncLLMClient()
         
@@ -156,10 +171,16 @@ async def explain_recommendation(request: ExplainRequest):
 
         explanation = await llm_client.generate_simple(prompt)
         
-        return {
+        result = {
             "explanation": explanation,
             "movie_title": request.movie_title
         }
+        
+        # 캐시에 저장 (TTL 24시간 - 설명은 자주 바뀌지 않음)
+        cache_set(cache_key, result, ttl=86400)
+        print(f"✅ [Explain] Cached result: {cache_key}")
+        
+        return result
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"설명 생성 오류: {str(e)}")

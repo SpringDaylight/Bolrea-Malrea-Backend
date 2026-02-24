@@ -40,6 +40,7 @@ class RefreshTokenStore:
         """
         client = get_redis_client()
         if not client:
+            # Redis 비활성화 시 조용히 실패
             return False
         
         try:
@@ -72,6 +73,7 @@ class RefreshTokenStore:
         """
         client = get_redis_client()
         if not client:
+            # Redis 비활성화 시 조용히 None 반환
             return None
         
         try:
@@ -79,7 +81,6 @@ class RefreshTokenStore:
             data = client.get(key)
             
             if not data:
-                print(f"⚠️ [RefreshToken] Not found or expired: {token_hash[:16]}...")
                 return None
             
             token_data = json.loads(data)
@@ -102,6 +103,7 @@ class RefreshTokenStore:
         """
         client = get_redis_client()
         if not client:
+            # Redis 비활성화 시 조용히 실패
             return False
         
         try:
@@ -110,8 +112,6 @@ class RefreshTokenStore:
             
             if deleted:
                 print(f"✅ [RefreshToken] Revoked: {token_hash[:16]}...")
-            else:
-                print(f"⚠️ [RefreshToken] Not found for revoke: {token_hash[:16]}...")
             
             return bool(deleted)
         except Exception as e:
@@ -131,6 +131,7 @@ class RefreshTokenStore:
         """
         client = get_redis_client()
         if not client:
+            # Redis 비활성화 시 조용히 0 반환
             return 0
         
         try:
@@ -168,6 +169,7 @@ class RefreshTokenStore:
         """
         client = get_redis_client()
         if not client:
+            # Redis 비활성화 시 조용히 False 반환
             return False
         
         try:

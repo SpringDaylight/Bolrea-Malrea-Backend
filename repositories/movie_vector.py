@@ -69,9 +69,18 @@ class MovieVectorRepository(BaseRepository[MovieVector]):
             self.db.refresh(existing)
             
             # 캐시 무효화: 해당 영화에 대한 모든 만족도 캐시 삭제
-            deleted_count = cache_delete_pattern(f"satisfaction:*:{movie_id}")
-            if deleted_count > 0:
-                print(f"✅ [Cache] Invalidated {deleted_count} satisfaction cache entries for movie {movie_id}")
+            satisfaction_deleted = cache_delete_pattern(f"satisfaction:*:{movie_id}")
+            if satisfaction_deleted > 0:
+                print(f"✅ [Cache] Invalidated {satisfaction_deleted} satisfaction cache entries for movie {movie_id}")
+            
+            # 설명 캐시 무효화: 해당 영화의 모든 설명 캐시 삭제
+            # 영화 제목 조회
+            from models import Movie
+            movie = self.db.query(Movie).filter(Movie.id == movie_id).first()
+            if movie:
+                explanation_deleted = cache_delete_pattern(f"explanation_detail:{movie.title}:*")
+                if explanation_deleted > 0:
+                    print(f"✅ [Cache] Invalidated {explanation_deleted} explanation cache entries for movie {movie.title}")
             
             return existing
         else:

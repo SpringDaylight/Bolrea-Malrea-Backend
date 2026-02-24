@@ -59,9 +59,12 @@ class UserPreferenceRepository(BaseRepository[UserPreference]):
             self.db.refresh(existing)
             
             # 캐시 무효화: 해당 사용자의 모든 만족도 캐시 삭제
-            deleted_count = cache_delete_pattern(f"satisfaction:{user_id}:*")
-            if deleted_count > 0:
-                print(f"✅ [Cache] Invalidated {deleted_count} satisfaction cache entries for user {user_id}")
+            satisfaction_deleted = cache_delete_pattern(f"satisfaction:{user_id}:*")
+            if satisfaction_deleted > 0:
+                print(f"✅ [Cache] Invalidated {satisfaction_deleted} satisfaction cache entries for user {user_id}")
+            
+            # 설명 캐시는 영화별로 저장되므로 사용자 변경 시 무효화 불필요
+            # (영화 제목과 확률 기반 캐시)
             
             return existing
         else:

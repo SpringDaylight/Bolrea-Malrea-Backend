@@ -21,7 +21,7 @@ from domain.a7_taste_map import build_taste_map
 app = FastAPI(
     title="Movie Recommendation API",
     description="정서·서사 기반 영화 취향 시뮬레이션 & 감성 검색 서비스",
-    version="1.1.5"
+    version="1.1.8"
 )
 
 # CORS middleware
@@ -33,7 +33,7 @@ app.add_middleware(
         "http://bolrae-malrae-frontend.s3-website.ap-northeast-2.amazonaws.com",  # S3 프로덕션
         # 추가 도메인이 있으면 여기에 추가
     ],
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )

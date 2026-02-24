@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from db import get_db
+from api.deps import get_current_user_optional
 from schemas import (
     MovieResponse, MovieListResponse, MovieCreate, MovieUpdate, MessageResponse,
     ReviewResponse, ReviewListResponse
@@ -116,7 +117,7 @@ def get_movie(movie_id: int, db: Session = Depends(get_db)):
 @router.get("/{movie_id}/reviews", response_model=ReviewListResponse)
 def get_movie_reviews(
     movie_id: int,
-    user_id: Optional[str] = Query(None, description="User ID"),
+    current_user=Depends(get_current_user_optional),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db)
@@ -130,8 +131,9 @@ def get_movie_reviews(
     review_repo = ReviewRepository(db)
     skip = (page - 1) * page_size
     
-    reviews = review_repo.get_by_movie(movie_id, skip=skip, limit=page_size, viewer_user_id=user_id)
-    total = review_repo.count_by_movie(movie_id, viewer_user_id=user_id)
+    viewer_user_id = current_user.id if current_user else None
+    reviews = review_repo.get_by_movie(movie_id, skip=skip, limit=page_size, viewer_user_id=viewer_user_id)
+    total = review_repo.count_by_movie(movie_id, viewer_user_id=viewer_user_id)
     
     review_responses = []
     for review in reviews:

@@ -129,14 +129,14 @@ def explain_prediction(payload: dict) -> dict:
     # 주요 요소 추출
     key_factors = []
     if breakdown:
-        emotion_sim = breakdown.get("emotion_similarity", 0)
+        emotion_sim   = breakdown.get("emotion_similarity", 0)
         narrative_sim = breakdown.get("narrative_similarity", 0)
-        ending_sim = breakdown.get("ending_similarity", 0)
+        direction_sim = breakdown.get("direction_mood_similarity", breakdown.get("ending_similarity", 0))
         
         key_factors = [
-            {"category": "emotion", "label": "정서 톤", "score": round(emotion_sim, 2)},
-            {"category": "narrative", "label": "서사 초점", "score": round(narrative_sim, 2)},
-            {"category": "ending", "label": "결말 취향", "score": round(ending_sim, 2)}
+            {"category": "emotion",        "label": "정서 톤",    "score": round(emotion_sim, 2)},
+            {"category": "narrative",      "label": "서사 초점",  "score": round(narrative_sim, 2)},
+            {"category": "direction_mood", "label": "연출 분위기", "score": round(direction_sim, 2)},
         ]
         
         # 점수 높은 순으로 정렬

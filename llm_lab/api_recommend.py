@@ -1,6 +1,7 @@
 """
 LLM 기반 영화 추천 API
 """
+import asyncio
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Optional
@@ -83,16 +84,18 @@ async def recommend_movies(request: RecommendRequest):
     """
     try:
         if request.use_orchestrator:
-            # 오케스트레이터 방식
-            result = orchestrator.recommend(
+            # 오케스트레이터 방식 - wrap blocking operation in thread pool
+            result = await asyncio.to_thread(
+                orchestrator.recommend,
                 user_input=request.user_input,
                 top_k=request.top_k,
                 candidate_pool_size=request.candidate_pool_size
             )
             result['method'] = 'orchestrator'
         else:
-            # 기존 방식
-            result = recommender.recommend(
+            # 기존 방식 - wrap blocking operation in thread pool
+            result = await asyncio.to_thread(
+                recommender.recommend,
                 user_input=request.user_input,
                 top_k=request.top_k,
                 candidate_pool_size=request.candidate_pool_size,
@@ -114,9 +117,9 @@ async def explain_recommendation(request: ExplainRequest):
     특정 영화 추천 이유를 LLM으로 상세 설명
     """
     try:
-        from llm_lab.client import LLMClient
+        from llm_lab.async_client import AsyncLLMClient
         
-        llm_client = LLMClient()
+        llm_client = AsyncLLMClient()
         
         # 점수 정보 포맷팅
         score_info = ""
@@ -151,7 +154,7 @@ async def explain_recommendation(request: ExplainRequest):
 
 친근하고 자연스러운 톤으로 작성해주세요."""
 
-        explanation = llm_client.generate_simple(prompt)
+        explanation = await llm_client.generate_simple(prompt)
         
         return {
             "explanation": explanation,
@@ -195,63 +198,70 @@ async def calculate_satisfaction(
         print(f"   - user_id (final): {user_id}")
         print(f"   - current_user: {current_user.id if current_user else None}")
         
-        db = SessionLocal()
-        
-        try:
-            # 영화 벡터 조회
-            movie_vector = db.query(MovieVector).filter(
-                MovieVector.movie_id == request.movie_id
-            ).first()
+        # Wrap database operations in thread pool
+        def _execute_satisfaction_calculation():
+            # Wrap SessionLocal() creation
+            db = SessionLocal()
             
-            if not movie_vector:
-                raise HTTPException(status_code=404, detail="영화 벡터를 찾을 수 없습니다")
-            
-            # 사용자 선호도 조회 (user_id가 있으면)
-            if user_id:
-                print(f"✅ [Satisfaction] user_id 있음, DB 조회 시작: {user_id}")
-                user_pref = db.query(UserPreference).filter(
-                    UserPreference.user_id == user_id
+            try:
+                # Wrap database query for movie vector
+                movie_vector = db.query(MovieVector).filter(
+                    MovieVector.movie_id == request.movie_id
                 ).first()
                 
-                if not user_pref or not user_pref.preference_vector_json:
-                    print(f"❌ [Satisfaction] UserPreference 없음")
-                    raise HTTPException(status_code=404, detail="사용자 선호도를 찾을 수 없습니다")
+                if not movie_vector:
+                    raise HTTPException(status_code=404, detail="영화 벡터를 찾을 수 없습니다")
                 
-                print(f"✅ [Satisfaction] UserPreference 찾음")
-                user_profile = user_pref.preference_vector_json
-            else:
-                # 로그인하지 않은 경우 에러
-                print(f"❌ [Satisfaction] user_id 없음 - 401 반환")
-                raise HTTPException(status_code=401, detail="로그인이 필요합니다")
-            
-            # 영화 프로필 구성
-            movie_profile = {
-                'emotion_scores': movie_vector.emotion_scores,
-                'narrative_traits': movie_vector.narrative_traits,
-                'ending_preference': movie_vector.ending_preference or {}
-            }
-            
-            # 만족도 확률 계산 (개선된 버전)
-            result = calculate_satisfaction_probability_improved(
-                user_profile=user_profile,
-                movie_profile=movie_profile,
-                dislikes=user_pref.dislike_tags or [],
-                boost_tags=user_pref.boost_tags or [],
-                use_sigmoid=True,
-                sigmoid_k=6.0,
-                sigmoid_x0=0.5
-            )
-            
-            return {
-                "movie_id": request.movie_id,
-                "satisfaction_probability": result['probability'],
-                "confidence": result['confidence'],
-                "breakdown": result['breakdown'],
-                "user_id": user_id
-            }
-            
-        finally:
-            db.close()
+                # Wrap database query for user preference (user_id가 있으면)
+                if user_id:
+                    print(f"✅ [Satisfaction] user_id 있음, DB 조회 시작: {user_id}")
+                    user_pref = db.query(UserPreference).filter(
+                        UserPreference.user_id == user_id
+                    ).first()
+                    
+                    if not user_pref or not user_pref.preference_vector_json:
+                        print(f"❌ [Satisfaction] UserPreference 없음")
+                        raise HTTPException(status_code=404, detail="사용자 선호도를 찾을 수 없습니다")
+                    
+                    print(f"✅ [Satisfaction] UserPreference 찾음")
+                    user_profile = user_pref.preference_vector_json
+                else:
+                    # 로그인하지 않은 경우 에러
+                    print(f"❌ [Satisfaction] user_id 없음 - 401 반환")
+                    raise HTTPException(status_code=401, detail="로그인이 필요합니다")
+                
+                # 영화 프로필 구성
+                movie_profile = {
+                    'emotion_scores': movie_vector.emotion_scores,
+                    'narrative_traits': movie_vector.narrative_traits,
+                    'ending_preference': movie_vector.ending_preference or {}
+                }
+                
+                # Wrap calculate_satisfaction_probability_improved() call
+                result = calculate_satisfaction_probability_improved(
+                    user_profile=user_profile,
+                    movie_profile=movie_profile,
+                    dislikes=user_pref.dislike_tags or [],
+                    boost_tags=user_pref.boost_tags or [],
+                    use_sigmoid=True,
+                    sigmoid_k=6.0,
+                    sigmoid_x0=0.5
+                )
+                
+                return {
+                    "movie_id": request.movie_id,
+                    "satisfaction_probability": result['probability'],
+                    "confidence": result['confidence'],
+                    "breakdown": result['breakdown'],
+                    "user_id": user_id
+                }
+                
+            finally:
+                # Ensure proper session cleanup in finally block
+                db.close()
+        
+        # Execute in thread pool to avoid blocking event loop
+        return await asyncio.to_thread(_execute_satisfaction_calculation)
         
     except HTTPException:
         raise

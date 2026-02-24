@@ -3,7 +3,7 @@ Movie repository with custom queries
 """
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import or_, and_, func
+from sqlalchemy import or_, and_, func, collate
 
 from models import Movie, MovieGenre, MovieTag, Review
 from repositories.base import BaseRepository
@@ -82,6 +82,9 @@ class MovieRepository(BaseRepository[Movie]):
         elif sort == "rating":
             # Sort by average rating
             db_query = db_query.order_by(func.coalesce(func.avg(Review.rating), 0).desc())
+        elif sort == "title":
+            # Sort by title (Korean collation)
+            db_query = db_query.order_by(collate(Movie.title, "ko_KR.utf8").asc().nullslast())
         else:  # latest (default)
             db_query = db_query.order_by(Movie.release.desc().nullslast())
         

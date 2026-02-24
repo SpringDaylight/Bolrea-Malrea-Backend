@@ -96,12 +96,12 @@ class LLMOrchestrator:
         # 선택된 영화 ID 집합
         selected_ids = {m['movie_id'] for m in validated_results['recommendations']}
         
-        # 후보군 정보 추가 (선택 여부 포함)
+        # 후보군 정보 추가 (선택 여부 포함 + 만족도)
         validated_results['keyword_candidates'] = self._format_candidates_for_display(
-            keyword_candidates, selected_ids
+            keyword_candidates, selected_ids, user_id
         )
         validated_results['vector_candidates'] = self._format_candidates_for_display(
-            vector_candidates, selected_ids
+            vector_candidates, selected_ids, user_id
         )
         validated_results['keyword_weight'] = keyword_weight
         validated_results['emotion_weight'] = emotion_weight
@@ -718,18 +718,26 @@ JSON만 출력하세요:"""
     def _format_candidates_for_display(
         self,
         candidates: List[Dict],
-        selected_ids: Set[int]
+        selected_ids: Set[int],
+        user_id: Optional[int] = None
     ) -> List[Dict]:
         """
-        후보를 프론트엔드 표시용으로 포맷팅
+        후보를 프론트엔드 표시용으로 포맷팅 (만족도 포함)
         
         Args:
             candidates: 후보 리스트
             selected_ids: 최종 선택된 영화 ID 집합
+            user_id: 사용자 ID (만족도 계산용, 선택사항)
             
         Returns:
-            포맷팅된 후보 리스트
+            포맷팅된 후보 리스트 (만족도 포함)
         """
+        # 만족도 계산 (로그인한 경우만)
+        satisfaction_scores = {}
+        if user_id:
+            candidate_ids = [m['movie_id'] for m in candidates]
+            satisfaction_scores = self._calculate_satisfaction_batch(user_id, candidate_ids)
+        
         formatted = []
         for movie in candidates:
             movie_id = movie['movie_id']
@@ -750,7 +758,8 @@ JSON만 출력하세요:"""
                 "poster_url": movie.get('poster_url'),
                 "rating": movie.get('rating'),
                 "is_selected": is_selected,
-                "not_selected_reason": self._get_not_selected_reason(movie, is_selected)
+                "not_selected_reason": self._get_not_selected_reason(movie, is_selected),
+                "satisfaction_probability": satisfaction_scores.get(movie_id)  # 만족도 확률
             })
         
         return formatted

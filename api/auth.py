@@ -20,7 +20,6 @@ from schemas import (
 )
 from repositories.user import UserRepository
 from repositories.user_auth import UserAuthRepository
-from repositories.refresh_token import RefreshTokenRepository
 from models import User
 from utils.security import (
     hash_password,
@@ -38,6 +37,7 @@ from utils.jwt import (
     JWT_COOKIE_SAMESITE,
     REFRESH_TOKEN_EXPIRES_DAYS,
 )
+from utils.refresh_token_store import RefreshTokenStore
 from datetime import date, datetime
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -62,12 +62,17 @@ def _clear_refresh_cookie(response: Response) -> None:
 def _issue_tokens(user: User, db: Session, response: Response) -> str:
     refresh_token, jti, expires_at = create_refresh_token(user.id)
     token_hash = hash_token(refresh_token)
-    RefreshTokenRepository(db).create(
-        user_id=user.id,
+    
+    # Redis에 refresh token 저장
+    ttl_seconds = REFRESH_TOKEN_EXPIRES_DAYS * 24 * 60 * 60
+    RefreshTokenStore.save(
         token_hash=token_hash,
+        user_id=user.id,
         jti=jti,
         expires_at=expires_at,
+        ttl_seconds=ttl_seconds
     )
+    
     _set_refresh_cookie(response, refresh_token)
     return create_access_token(user.id)
 
@@ -366,15 +371,21 @@ def refresh_access_token(request: Request, response: Response, db: Session = Dep
 
     payload = decode_token(refresh_token, expected_type="refresh")
     token_hash = hash_token(refresh_token)
-    repo = RefreshTokenRepository(db)
-    stored = repo.get_by_hash(token_hash)
-    if not stored or stored.revoked_at is not None:
-        raise HTTPException(status_code=401, detail="Refresh token revoked")
-    if stored.expires_at and stored.expires_at.replace(tzinfo=None) < datetime.utcnow():
+    
+    # Redis에서 refresh token 조회
+    stored = RefreshTokenStore.get(token_hash)
+    if not stored:
+        raise HTTPException(status_code=401, detail="Refresh token expired or revoked")
+    
+    # 만료 시간 확인
+    expires_at = datetime.fromisoformat(stored["expires_at"])
+    if expires_at.replace(tzinfo=None) < datetime.utcnow():
+        RefreshTokenStore.revoke(token_hash)
         raise HTTPException(status_code=401, detail="Refresh token expired")
 
-    # Rotate refresh token
-    repo.revoke(stored)
+    # Rotate refresh token (기존 토큰 무효화)
+    RefreshTokenStore.revoke(token_hash)
+    
     user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token payload")
@@ -418,10 +429,8 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)):
     refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
     if refresh_token:
         token_hash = hash_token(refresh_token)
-        repo = RefreshTokenRepository(db)
-        stored = repo.get_by_hash(token_hash)
-        if stored and stored.revoked_at is None:
-            repo.revoke(stored)
+        # Redis에서 refresh token 무효화
+        RefreshTokenStore.revoke(token_hash)
 
     _clear_refresh_cookie(response)
     return MessageResponse(message="Logged out successfully")

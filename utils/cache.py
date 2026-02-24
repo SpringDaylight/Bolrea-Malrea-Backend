@@ -24,6 +24,7 @@ def get_redis_client() -> Optional[redis.Redis]:
     global _redis_client
     
     if not REDIS_ENABLED:
+        # Redis가 비활성화된 경우 연결 시도하지 않음
         return None
     
     if _redis_client is None:

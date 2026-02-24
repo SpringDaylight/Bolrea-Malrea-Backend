@@ -155,13 +155,25 @@ def get_movie_reviews(
     skip = (page - 1) * page_size
     
     viewer_user_id = current_user.id if current_user else None
-    reviews = review_repo.get_by_movie(movie_id, skip=skip, limit=page_size, viewer_user_id=viewer_user_id)
-    total = review_repo.count_by_movie(movie_id, viewer_user_id=viewer_user_id)
+    reviews = review_repo.get_by_movie(
+        movie_id,
+        skip=skip,
+        limit=page_size,
+        viewer_user_id=viewer_user_id,
+        include_private=True,
+    )
+    total = review_repo.count_by_movie(
+        movie_id,
+        viewer_user_id=viewer_user_id,
+        include_private=True,
+    )
     
     review_responses = []
     for review in reviews:
         result = review_repo.get_with_counts(review.id)
         review_obj = result["review"]
+        is_owner = viewer_user_id and review_obj.user_id == viewer_user_id
+        content = review_obj.content if (review_obj.is_public or is_owner) else None
         review_responses.append(
             ReviewResponse(
                 id=review_obj.id,
@@ -169,7 +181,7 @@ def get_movie_reviews(
                 user_nickname=review_obj.user.nickname if review_obj.user else None,
                 movie_id=review_obj.movie_id,
                 rating=review_obj.rating,
-                content=review_obj.content,
+                content=content,
                 is_public=review_obj.is_public,
                 created_at=review_obj.created_at,
                 likes_count=result["likes_count"],

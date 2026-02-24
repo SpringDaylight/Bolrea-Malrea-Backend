@@ -18,6 +18,8 @@ try:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    import threading
+    plot_lock = threading.Lock()
     HAS_WORDCLOUD = True
 except ImportError:
     HAS_WORDCLOUD = False
@@ -269,44 +271,145 @@ def get_user_wordcloud(
     from matplotlib.font_manager import FontProperties
     # FONT_PATH가 None이면 fname 인자 없이 기본 폰트 사용
     fp = FontProperties(fname=FONT_PATH) if FONT_PATH else FontProperties()
+    fp_bold = FontProperties(fname=FONT_PATH, weight='bold') if FONT_PATH else FontProperties(weight='bold')
 
-    fig, ax = None, None
-
-    if type == "boost":
-        if not boost_tags:
-            raise HTTPException(status_code=404, detail="No boost tags found")
-        fig, ax = plt.subplots(figsize=(10, 5))
-        ax.imshow(make_wc_from_list(boost_tags, "Blues"), interpolation="bilinear")
-        ax.axis("off")
-    elif type == "dislike":
-        raise HTTPException(status_code=400, detail="dislike type is no longer supported. Use 'boost' or 'both'.")
-    else:  # both: 왼쪽=정서태그(리뷰 기반), 오른쪽=좋아하는태그
-        fig, axes = plt.subplots(1, 2, figsize=(20, 6))
-        # 두 패널 사이 간격 조정
-        plt.subplots_adjust(wspace=0.25)
-
-        # 왼쪽: 정서태그 - emotion_scores 중 임계값 이상만 (설문 초기값 제외)
-        EMOTION_THRESHOLD = 0.25
-        review_emotions = {k: v for k, v in emotion_scores.items() if v >= EMOTION_THRESHOLD}
-
-        if review_emotions:
-            axes[0].imshow(make_wc_from_freq(review_emotions, "Purples"), interpolation="bilinear")
-        else:
-            axes[0].text(0.5, 0.5, "리뷰를 더 남겨보세요!", ha="center", va="center",
-                         fontsize=13, fontproperties=fp, color="#888888")
-        axes[0].axis("off")
-
-        # 오른쪽: 좋아하는 태그 (boost_tags, 파랑 계열)
-        if boost_tags:
-            axes[1].imshow(make_wc_from_list(boost_tags, "Blues"), interpolation="bilinear")
-        else:
-            axes[1].text(0.5, 0.5, "데이터 없음", ha="center", va="center",
-                         fontsize=14, fontproperties=fp)
-        axes[1].axis("off")
-
-    plt.tight_layout(pad=0)
-    buf = io.BytesIO()
-    plt.savefig(buf, format="png", dpi=150, bbox_inches="tight", facecolor="white")
-    plt.close(fig)
+    with plot_lock:
+        if type == "boost":
+            narrative_traits: dict = pref_vector.get("narrative_traits", {})
+            freq = {}
+            for k, v in narrative_traits.items():
+                if v >= 0.1:
+                    freq[k] = v * 10
+            for i, tag in enumerate(boost_tags):
+                freq[tag] = freq.get(tag, 0) + max(2, len(boost_tags) - i)
+                
+            fig, ax = plt.subplots(figsize=(10, 5))
+            if not freq:
+                ax.text(0.5, 0.5, "단어 부족", ha="center", va="center", fontsize=13, fontproperties=fp, color="#888888")
+                ax.axis("off")
+            else:
+                ax.imshow(make_wc_from_freq(freq, "Blues"), interpolation="bilinear")
+                ax.axis("off")
+                
+        elif type == "emotion":
+            # 영화 영양 성분표 (Nutrition Facts)
+            
+            # 취향 데이터 파싱 및 통계 생성
+            emotions = pref_vector.get("emotion_scores", {})
+            moods = pref_vector.get("direction_mood", {})
+            narratives = pref_vector.get("narrative_traits", {})
+            
+            # 핵심 4개 성분 점수 (임의 계산 방식)
+            dopamine_score = max(0, moods.get("긴장되는", 0) + narratives.get("반전이 한 번 크게 있어요", 0)) * 100
+            sensitivity_score = max(0, emotions.get("감동적이에요", 0) + emotions.get("슬퍼요", 0) + emotions.get("따뜻해요", 0)) * 100
+            brain_score = max(0, narratives.get("생각하면서 봐야 해요", 0) + pref_vector.get("ending_preference", {}).get("열린 결말이에요", 0) * 0.5) * 100
+            eye_score = max(0, moods.get("영상미가 뛰어나요", 0) + emotions.get("몽환적이에요", 0)) * 100
+            
+            # 특별 첨가물 추출 (가장 높은 3개 특징)
+            all_traits = {**emotions, **moods, **narratives}
+            top_traits = sorted(all_traits.items(), key=lambda x: x[1], reverse=True)[:3]
+            
+            # 캔버스 설정 (가로로 좀 더 길게 8:8 -> 10:8)
+            fig, ax = plt.subplots(figsize=(10, 8))
+            ax.set_facecolor('white')
+            ax.axis([0, 10, 0, 15]) # x: 0~10, y: 0~15 가상 좌표계
+            ax.axis('off')
+            
+            y = 14.5
+            
+            # 헤더
+            ax.text(0.5, y, "Nutrition Facts", fontsize=32, fontproperties=fp_bold)
+            y -= 0.8
+            ax.text(0.5, y, "당신의 영화 영양 성분표", fontsize=16, fontproperties=fp, color="#4b5563")
+            y -= 0.6
+            ax.axhline(y, color='black', linewidth=14, xmin=0.05, xmax=0.95)
+            y -= 0.8
+            
+            # 칼로리 정보
+            ax.text(0.5, y, "영화 관람 열량 (리뷰 에너지)", fontsize=14, fontproperties=fp_bold)
+            y -= 1.0
+            ax.text(0.5, y, "Calories", fontsize=24, fontproperties=fp_bold)
+            ax.text(9.5, y, "1,984 kcal", fontsize=28, ha='right', fontproperties=fp_bold)
+            y -= 0.5
+            ax.axhline(y, color='black', linewidth=6, xmin=0.05, xmax=0.95)
+            y -= 0.7
+            
+            ax.text(9.5, y, "% Daily Value*", fontsize=11, ha='right', fontproperties=fp_bold)
+            y -= 0.4
+            ax.axhline(y, color='black', linewidth=1, xmin=0.05, xmax=0.95)
+            y -= 0.8
+            
+            # 영양소 항목들 그리기
+            def draw_nutrient(y_pos, name, score, color_hex):
+                ax.text(0.5, y_pos, name, fontsize=15, fontproperties=fp_bold)
+                # 퍼센트 텍스트 계산 (0~100 사이로 보정)
+                pct_val = min(100, max(0, int(score * 1.5)))
+                
+                # 퍼센트가 0일 경우에도 약간은 채워지게 보이는 버그 수정 
+                # (pct_val이 표시 퍼센트이자 막대 길이를 결정하도록 통일)
+                ax.text(9.5, y_pos, f"{pct_val}%", fontsize=15, ha='right', fontproperties=fp_bold)
+                
+                # 배경 빈 막대
+                ax.axhline(y_pos - 0.35, color='#f3f4f6', linewidth=16, xmin=0.05, xmax=0.95)
+                # 채워진 % 막대 (최소 0.05에서 최대 0.95까지, 퍼센트에례)
+                # 예를 들어 pct_val이 50%이면 0.05 + 0.9 * 0.5 = 0.5
+                fill_xmax = 0.05 + 0.9 * (pct_val / 100.0)
+                if pct_val > 0:
+                    ax.axhline(y_pos - 0.35, color=color_hex, linewidth=16, xmin=0.05, xmax=fill_xmax)
+                
+                # 하단 구분선
+                ax.axhline(y_pos - 0.7, color='black', linewidth=1, xmin=0.05, xmax=0.95)
+                return y_pos - 1.4
+                
+            y = draw_nutrient(y, "도파민 (스릴/전개속도)", dopamine_score, "#ef4444")
+            y = draw_nutrient(y, "감수성 (감동/가족/눈물)", sensitivity_score, "#3b82f6")
+            y = draw_nutrient(y, "두뇌회전 (사색/열린결말)", brain_score, "#8b5cf6")
+            y = draw_nutrient(y, "안구정화 (영상미/연출)", eye_score, "#10b981")
+            
+            # 하단 굵은 줄
+            y += 0.2
+            ax.axhline(y, color='black', linewidth=10, xmin=0.05, xmax=0.95)
+            y -= 0.6
+            
+            # 첨가물
+            ax.text(0.5, y, "Contains:", fontsize=13, fontproperties=fp_bold)
+            y -= 0.6
+            ingredients = ", ".join([f"[{k}] {int(v*100)}mg" for k, v in top_traits]) if top_traits else "없음"
+            ax.text(0.5, y, f"특별 첨가물: {ingredients}", fontsize=12, fontproperties=fp, color="#374151")
+            
+            y -= 0.8
+            ax.axhline(y, color='black', linewidth=1, xmin=0.05, xmax=0.95)
+            y -= 0.5
+            ax.text(0.5, y, "* 1일 장르 권장량은 관람자의 감정 상태에 따라 다를 수 있습니다.", fontsize=10, fontproperties=fp, color="#6b7280")
+            
+        else:  # both: 왼쪽=정서태그(리뷰 기반), 오른쪽=좋아하는태그
+            fig, axes = plt.subplots(1, 2, figsize=(20, 6))
+            # 두 패널 사이 간격 조정
+            plt.subplots_adjust(wspace=0.25)
+    
+            # 왼쪽: 정서태그 - emotion_scores 중 임계값 이상만 (설문 초기값 제외)
+            EMOTION_THRESHOLD = 0.25
+            review_emotions = {k: v for k, v in emotion_scores.items() if v >= EMOTION_THRESHOLD}
+    
+            if review_emotions:
+                axes[0].imshow(make_wc_from_freq(review_emotions, "Purples"), interpolation="bilinear")
+            else:
+                axes[0].text(0.5, 0.5, "리뷰를 더 남겨보세요!", ha="center", va="center",
+                             fontsize=13, fontproperties=fp, color="#888888")
+            axes[0].axis("off")
+    
+            # 오른쪽: 좋아하는 태그 (boost_tags, 파랑 계열)
+            if boost_tags:
+                axes[1].imshow(make_wc_from_list(boost_tags, "Blues"), interpolation="bilinear")
+            else:
+                axes[1].text(0.5, 0.5, "데이터 없음", ha="center", va="center",
+                             fontsize=14, fontproperties=fp)
+            axes[1].axis("off")
+    
+        plt.tight_layout(pad=0)
+        buf = io.BytesIO()
+        plt.savefig(buf, format="png", dpi=150, bbox_inches="tight", facecolor="white")
+        plt.close(fig)
+        
     buf.seek(0)
     return StreamingResponse(buf, media_type="image/png")

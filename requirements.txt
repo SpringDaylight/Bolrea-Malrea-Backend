@@ -8,10 +8,10 @@ boto3
 python-dotenv
 requests
 passlib[argon2,bcrypt]
-numpy==2.2.0
-Pillow>=11.0.0
+numpy==1.26.4
+Pillow==10.3.0
 passlib[bcrypt]
-matplotlib>=3.10.3
+matplotlib>=3.7.0
 wordcloud>=1.9.0
-scipy>=1.14.1
+scipy>=1.10.0
 PyJWT>=2.8.0

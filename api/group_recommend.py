@@ -265,7 +265,7 @@ async def recommend_group_v2(request: GroupRecommendRequest):
             extract_factor_tag_details,
             build_movie_explanation_with_llm
         )
-        from ml.model_sample.analysis.similarity import calculate_satisfaction_probability
+        from ml.model_sample.analysis.cal_sim import calculate_satisfaction_probability_improved
         
         # 사용자 프로필 생성
         user_profiles = [build_user_profile(u, taxonomy) for u in users]
@@ -371,13 +371,16 @@ async def recommend_group_v2(request: GroupRecommendRequest):
             print(f"     movie emotion 샘플: {list(first_profile.get('emotion_scores', {}).keys())[:3]}")
             
             for u, up in zip(users, user_profiles):
-                res = calculate_satisfaction_probability(
+                res = calculate_satisfaction_probability_improved(
                     user_profile=up,
                     movie_profile=first_profile,
                     dislikes=u.get("dislikes", []),
                     boost_tags=u.get("likes", []),
                     penalty_weight=0.7,
-                    boost_weight=0.5
+                    boost_weight=0.03,
+                    use_sigmoid=True,
+                    sigmoid_k=6.0,
+                    sigmoid_x0=0.5
                 )
                 prob = float(res.get("probability", 0.0))
                 breakdown = res.get("breakdown", {}) or {}
@@ -398,13 +401,16 @@ async def recommend_group_v2(request: GroupRecommendRequest):
             per_user_data = []  # LLM 설명 없이 기본 데이터만 저장
             
             for u, up in zip(users, user_profiles):
-                res = calculate_satisfaction_probability(
+                res = calculate_satisfaction_probability_improved(
                     user_profile=up,
                     movie_profile=movie_profile,
                     dislikes=u.get("dislikes", []),
                     boost_tags=u.get("likes", []),
                     penalty_weight=0.7,
-                    boost_weight=0.5
+                    boost_weight=0.03,
+                    use_sigmoid=True,
+                    sigmoid_k=6.0,
+                    sigmoid_x0=0.5
                 )
                 prob = float(res.get("probability", 0.0))
                 per_user_probs.append(prob)

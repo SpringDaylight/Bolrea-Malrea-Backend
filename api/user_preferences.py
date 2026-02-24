@@ -236,14 +236,13 @@ def get_user_wordcloud(
     # emotion_scores: {"감동적이에요": 0.85, ...}
     emotion_scores: dict = pref_vector.get("emotion_scores", {})
 
-    import platform
     import os as _os
     _FONT_CANDIDATES = [
-        "C:/Windows/Fonts/malgun.ttf",       # Windows
-        "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",   # Ubuntu (nanum-font)
-        "/usr/share/fonts/nanum/NanumGothic.ttf",             # Amazon Linux
+        "C:/Windows/Fonts/malgun.ttf",                              # Windows
+        "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",          # Ubuntu/Debian (fonts-nanum)
+        "/usr/share/fonts/nanum/NanumGothic.ttf",                   # Amazon Linux
         "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",  # Noto CJK
-        "/Library/Fonts/AppleGothic.ttf",    # macOS
+        "/Library/Fonts/AppleGothic.ttf",                          # macOS
     ]
     FONT_PATH = next(
         (p for p in _FONT_CANDIDATES if _os.path.exists(p)),
@@ -268,7 +267,8 @@ def get_user_wordcloud(
         return make_wc_from_freq(freq, colormap, width, height)
 
     from matplotlib.font_manager import FontProperties
-    fp = FontProperties(fname=FONT_PATH)
+    # FONT_PATH가 None이면 fname 인자 없이 기본 폰트 사용
+    fp = FontProperties(fname=FONT_PATH) if FONT_PATH else FontProperties()
 
     fig, ax = None, None
 

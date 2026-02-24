@@ -39,7 +39,8 @@ class LLMOrchestrator:
         self,
         user_input: str,
         top_k: int = 5,
-        candidate_pool_size: int = 150
+        candidate_pool_size: int = 150,
+        user_id: Optional[int] = None
     ) -> Dict:
         """
         LLM 오케스트레이션 기반 추천
@@ -48,6 +49,7 @@ class LLMOrchestrator:
             user_input: 사용자 입력
             top_k: 최종 추천 개수
             candidate_pool_size: 후보 풀 크기
+            user_id: 사용자 ID (만족도 계산용, 선택사항)
             
         Returns:
             추천 결과 (영화 리스트 + 설명 + 후보군 정보)
@@ -87,7 +89,8 @@ class LLMOrchestrator:
         # Step 4: ID Validation - 할루시네이션 방지
         validated_results = self._validate_recommendations(
             ranked_results=ranked_results,
-            candidate_pool=candidates
+            candidate_pool=candidates,
+            user_id=user_id
         )
         
         # 선택된 영화 ID 집합
@@ -554,17 +557,19 @@ JSON만 출력하세요:"""
     def _validate_recommendations(
         self,
         ranked_results: Dict,
-        candidate_pool: List[Dict]
+        candidate_pool: List[Dict],
+        user_id: Optional[int] = None
     ) -> Dict:
         """
-        Step 4: ID Validation - 할루시네이션 방지
+        Step 4: ID Validation - 할루시네이션 방지 + 만족도 계산
         
         Args:
             ranked_results: LLM 랭킹 결과
             candidate_pool: 원본 후보 풀
+            user_id: 사용자 ID (만족도 계산용, 선택사항)
             
         Returns:
-            검증된 추천 결과
+            검증된 추천 결과 (만족도 포함)
         """
         # 후보 풀의 ID 집합
         valid_ids = {m['movie_id'] for m in candidate_pool}
@@ -580,6 +585,11 @@ JSON만 출력하세요:"""
         
         # 검증된 영화 정보 조회
         id_to_movie = {m['movie_id']: m for m in candidate_pool}
+        
+        # 만족도 계산 (로그인한 경우만)
+        satisfaction_scores = {}
+        if user_id:
+            satisfaction_scores = self._calculate_satisfaction_batch(user_id, validated_ids)
         
         recommendations = []
         for movie_id in validated_ids:
@@ -601,7 +611,8 @@ JSON만 출력하세요:"""
                 "poster_url": movie.get('poster_url'),
                 "rating": movie.get('rating'),
                 "synopsis": movie.get('synopsis'),  # 시놉시스 추가
-                "reason": reason  # LLM이 생성한 개별 이유
+                "reason": reason,  # LLM이 생성한 개별 이유
+                "satisfaction_probability": satisfaction_scores.get(movie_id)  # 만족도 확률
             })
         
         # 최종 점수로 정렬 (높은 순)
@@ -613,6 +624,96 @@ JSON만 출력하세요:"""
             "candidates_count": len(candidate_pool),
             "validated": True
         }
+    
+    def _calculate_satisfaction_batch(self, user_id: int, movie_ids: List[int]) -> Dict[int, float]:
+        """
+        여러 영화에 대한 만족도를 일괄 계산
+        
+        Args:
+            user_id: 사용자 ID
+            movie_ids: 영화 ID 리스트
+            
+        Returns:
+            {movie_id: satisfaction_probability} 딕셔너리
+        """
+        from db import SessionLocal
+        from models import UserPreference, MovieVector
+        from ml.model_sample.analysis.cal_sim import calculate_satisfaction_probability_improved
+        from utils.cache import cache_get, cache_set
+        
+        db = SessionLocal()
+        satisfaction_scores = {}
+        
+        try:
+            # 사용자 선호도 조회
+            user_pref = db.query(UserPreference).filter(
+                UserPreference.user_id == user_id
+            ).first()
+            
+            if not user_pref or not user_pref.preference_vector_json:
+                print(f"⚠️ [Satisfaction Batch] 사용자 선호도 없음: user_id={user_id}")
+                return {}
+            
+            user_profile = user_pref.preference_vector_json
+            
+            # 각 영화에 대해 만족도 계산
+            for movie_id in movie_ids:
+                # 캐시 확인
+                cache_key = f"satisfaction:{user_id}:{movie_id}"
+                cached_result = cache_get(cache_key)
+                
+                if cached_result:
+                    satisfaction_scores[movie_id] = cached_result.get('satisfaction_probability')
+                    continue
+                
+                # 영화 벡터 조회
+                movie_vector = db.query(MovieVector).filter(
+                    MovieVector.movie_id == movie_id
+                ).first()
+                
+                if not movie_vector:
+                    continue
+                
+                # 영화 프로필 구성
+                movie_profile = {
+                    'emotion_scores': movie_vector.emotion_scores,
+                    'narrative_traits': movie_vector.narrative_traits,
+                    'ending_preference': movie_vector.ending_preference or {}
+                }
+                
+                # 만족도 계산
+                result = calculate_satisfaction_probability_improved(
+                    user_profile=user_profile,
+                    movie_profile=movie_profile,
+                    dislikes=user_pref.dislike_tags or [],
+                    boost_tags=user_pref.boost_tags or [],
+                    use_sigmoid=True,
+                    sigmoid_k=6.0,
+                    sigmoid_x0=0.5
+                )
+                
+                satisfaction_scores[movie_id] = result['probability']
+                
+                # 캐시에 저장
+                cache_result = {
+                    "movie_id": movie_id,
+                    "satisfaction_probability": result['probability'],
+                    "confidence": result['confidence'],
+                    "breakdown": result['breakdown'],
+                    "user_id": user_id
+                }
+                cache_set(cache_key, cache_result, ttl=3600)
+            
+            print(f"✅ [Satisfaction Batch] {len(satisfaction_scores)}개 영화 만족도 계산 완료")
+            
+        except Exception as e:
+            print(f"⚠️ [Satisfaction Batch] 오류: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            db.close()
+        
+        return satisfaction_scores
     
     def _format_candidates_for_display(
         self,

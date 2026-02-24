@@ -60,6 +60,7 @@ class Movie(BaseModel):
     reason: Optional[str] = None  # 개별 추천 이유
     is_selected: Optional[bool] = None  # 최종 선택 여부
     not_selected_reason: Optional[str] = None  # 선택되지 않은 이유
+    satisfaction_probability: Optional[float] = None  # 만족도 확률
 
 
 class RecommendResponse(BaseModel):
@@ -75,7 +76,10 @@ class RecommendResponse(BaseModel):
 
 
 @router.post("/recommend", response_model=RecommendResponse)
-async def recommend_movies(request: RecommendRequest):
+async def recommend_movies(
+    request: RecommendRequest,
+    current_user = Depends(get_current_user_optional)
+):
     """
     LLM 기반 영화 추천
     
@@ -83,13 +87,17 @@ async def recommend_movies(request: RecommendRequest):
     - use_orchestrator=True: 오케스트레이터 방식 (LLM 컨트롤러)
     """
     try:
+        # 사용자 ID 추출 (로그인한 경우)
+        user_id = current_user.id if current_user else None
+        
         if request.use_orchestrator:
             # 오케스트레이터 방식 - wrap blocking operation in thread pool
             result = await asyncio.to_thread(
                 orchestrator.recommend,
                 user_input=request.user_input,
                 top_k=request.top_k,
-                candidate_pool_size=request.candidate_pool_size
+                candidate_pool_size=request.candidate_pool_size,
+                user_id=user_id  # 사용자 ID 전달
             )
             result['method'] = 'orchestrator'
         else:

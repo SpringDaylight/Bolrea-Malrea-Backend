@@ -42,6 +42,8 @@ class UserPreferenceRepository(BaseRepository[UserPreference]):
         Returns:
             UserPreference object
         """
+        from utils.cache import cache_delete_pattern
+        
         existing = self.get_by_user_id(user_id)
         
         if existing:
@@ -55,6 +57,12 @@ class UserPreferenceRepository(BaseRepository[UserPreference]):
             
             self.db.commit()
             self.db.refresh(existing)
+            
+            # 캐시 무효화: 해당 사용자의 모든 만족도 캐시 삭제
+            deleted_count = cache_delete_pattern(f"satisfaction:{user_id}:*")
+            if deleted_count > 0:
+                print(f"✅ [Cache] Invalidated {deleted_count} satisfaction cache entries for user {user_id}")
+            
             return existing
         else:
             # Create new preference

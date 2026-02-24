@@ -50,6 +50,8 @@ class MovieVectorRepository(BaseRepository[MovieVector]):
         Returns:
             MovieVector object
         """
+        from utils.cache import cache_delete_pattern
+        
         existing = self.get_by_movie_id(movie_id)
         
         if existing:
@@ -65,6 +67,12 @@ class MovieVectorRepository(BaseRepository[MovieVector]):
             
             self.db.commit()
             self.db.refresh(existing)
+            
+            # 캐시 무효화: 해당 영화에 대한 모든 만족도 캐시 삭제
+            deleted_count = cache_delete_pattern(f"satisfaction:*:{movie_id}")
+            if deleted_count > 0:
+                print(f"✅ [Cache] Invalidated {deleted_count} satisfaction cache entries for movie {movie_id}")
+            
             return existing
         else:
             # Create new vector

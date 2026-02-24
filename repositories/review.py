@@ -20,7 +20,8 @@ class ReviewRepository(BaseRepository[Review]):
         movie_id: int,
         skip: int = 0,
         limit: int = 20,
-        viewer_user_id: Optional[str] = None
+        viewer_user_id: Optional[str] = None,
+        include_private: bool = False
     ) -> List[Review]:
         """Get reviews for a movie with user info (public + viewer's private)"""
         query = (
@@ -29,10 +30,11 @@ class ReviewRepository(BaseRepository[Review]):
             .filter(Review.movie_id == movie_id)
         )
 
-        if viewer_user_id:
-            query = query.filter(or_(Review.is_public == True, Review.user_id == viewer_user_id))
-        else:
-            query = query.filter(Review.is_public == True)
+        if not include_private:
+            if viewer_user_id:
+                query = query.filter(or_(Review.is_public == True, Review.user_id == viewer_user_id))
+            else:
+                query = query.filter(Review.is_public == True)
 
         return (
             query.order_by(Review.created_at.desc())
@@ -89,13 +91,19 @@ class ReviewRepository(BaseRepository[Review]):
             "comments_count": comments_count
         }
 
-    def count_by_movie(self, movie_id: int, viewer_user_id: Optional[str] = None) -> int:
+    def count_by_movie(
+        self,
+        movie_id: int,
+        viewer_user_id: Optional[str] = None,
+        include_private: bool = False,
+    ) -> int:
         """Count reviews for a movie with visibility rules"""
         query = self.db.query(func.count(Review.id)).filter(Review.movie_id == movie_id)
-        if viewer_user_id:
-            query = query.filter(or_(Review.is_public == True, Review.user_id == viewer_user_id))
-        else:
-            query = query.filter(Review.is_public == True)
+        if not include_private:
+            if viewer_user_id:
+                query = query.filter(or_(Review.is_public == True, Review.user_id == viewer_user_id))
+            else:
+                query = query.filter(Review.is_public == True)
         return query.scalar()
     
     def toggle_like(self, review_id: int, user_id: str, is_like: bool = True) -> bool:

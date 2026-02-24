@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 from llm_lab.client import LLMClient
+from llm_lab.async_client import AsyncLLMClient
 from llm_lab.prompts import list_prompts
 from llm_lab.recommender import LLMRecommender
 
@@ -38,8 +39,8 @@ async def chat(request: ChatRequest):
     Chat with LLM for movie recommendation experimentation
     """
     try:
-        # Use LLMClient
-        client = LLMClient()
+        # Use AsyncLLMClient for non-blocking LLM operations
+        client = AsyncLLMClient()
         
         # Convert Pydantic models to dicts
         messages = [
@@ -47,8 +48,8 @@ async def chat(request: ChatRequest):
             for msg in request.messages
         ]
         
-        # Generate response
-        result = client.generate(
+        # Generate response with await
+        result = await client.generate(
             messages=messages,
             system_prompt=request.system_prompt,
             temperature=request.temperature,

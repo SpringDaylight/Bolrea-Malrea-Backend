@@ -144,14 +144,17 @@ async def explain_recommendation(request: ExplainRequest):
         
         llm_client = AsyncLLMClient()
         
-        # 점수 정보 포맷팅
-        score_info = ""
-        if request.final_score is not None:
-            score_info += f"\n- 최종 점수: {request.final_score * 100:.1f}%"
-        if request.keyword_score is not None and request.keyword_score > 0:
-            score_info += f"\n- 키워드 매칭: {request.keyword_score * 100:.1f}%"
-        if request.emotion_score is not None and request.emotion_score > 0:
-            score_info += f"\n- 감성 유사도: {request.emotion_score * 100:.1f}%"
+        # 점수 정보를 내부적으로만 사용 (LLM에게 컨텍스트 제공)
+        score_context = ""
+        has_keyword_match = request.keyword_score is not None and request.keyword_score > 0
+        has_emotion_match = request.emotion_score is not None and request.emotion_score > 0
+        
+        if has_keyword_match and has_emotion_match:
+            score_context = "\n\n[내부 정보] 이 영화는 키워드 매칭과 감성 유사도 모두에서 높은 점수를 받았습니다."
+        elif has_keyword_match:
+            score_context = "\n\n[내부 정보] 이 영화는 주로 키워드 매칭을 통해 선택되었습니다."
+        elif has_emotion_match:
+            score_context = "\n\n[내부 정보] 이 영화는 주로 감성 유사도를 통해 선택되었습니다."
         
         # 장르 정보
         genre_info = ""
@@ -166,14 +169,14 @@ async def explain_recommendation(request: ExplainRequest):
         prompt = f"""사용자가 "{request.user_input}"라고 요청했을 때, 
 영화 "{request.movie_title}"을(를) 추천한 이유를 자세히 설명해주세요.
 
-영화 정보:{genre_info}{synopsis_info}
-
-점수 정보:{score_info}
+영화 정보:{genre_info}{synopsis_info}{score_context}
 
 다음 내용을 포함해서 2-3문단으로 설명해주세요:
 1. 이 영화가 사용자 요청과 어떻게 관련되는지
-2. 영화의 어떤 특징이 사용자의 니즈를 충족시키는지
-3. 점수가 높은/낮은 이유 (키워드 매칭, 감성 유사도 등)
+2. 영화의 어떤 특징(주제, 분위기, 스토리 등)이 사용자의 니즈를 충족시키는지
+3. 왜 이 영화가 다른 후보들 중에서 선택되었는지
+
+⚠️ 중요: 구체적인 점수나 퍼센트는 절대 언급하지 마세요. 대신 영화의 특징과 사용자 요청의 연관성을 자연스럽게 설명하세요.
 
 친근하고 자연스러운 톤으로 작성해주세요."""
 

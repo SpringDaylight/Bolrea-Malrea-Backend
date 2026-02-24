@@ -136,12 +136,12 @@ def sigmoid(x: float, k: float = 8.0, x0: float = 0.5) -> float:
     return 1.0 / (1.0 + math.exp(-k * (x - x0)))
 
 
-def _get_top_factors(sim_e: float, sim_n: float, sim_d: float) -> List[str]:
+def _get_top_factors(sim_e: float, sim_n: float, sim_dm: float = 0.0) -> List[str]:
     """매칭에 가장 크게 기여하는 요소 식별"""
     factors = [
         ("정서 톤", sim_e),
         ("서사 초점", sim_n),
-        ("결말 취향", sim_d)
+        ("연출 분위기", sim_dm),
     ]
     factors.sort(key=lambda x: x[1], reverse=True)
     return [f[0] for f in factors[:2]]
@@ -190,7 +190,7 @@ def calculate_satisfaction_probability_improved(
     if boost_tags is None:
         boost_tags = []
     if weights is None:
-        weights = {"emotion": 0.4, "narrative": 0.4, "ending": 0.2}
+        weights = {"emotion": 0.4, "narrative": 0.4, "direction_mood": 0.2}
     
     # 센터링 적용 (옵션)
     user_emotion = user_profile['emotion_scores']
@@ -206,22 +206,22 @@ def calculate_satisfaction_probability_improved(
         user_narrative = _apply_top_k_sparsity(user_narrative, top_k)
     
     # 1. 차원별 코사인 유사도 계산
-    e_keys = list(user_emotion.keys())
-    n_keys = list(user_narrative.keys())
-    d_keys = list(user_profile['ending_preference'].keys())
+    e_keys  = list(user_emotion.keys())
+    n_keys  = list(user_narrative.keys())
+    dm_keys = list(user_profile.get('direction_mood', {}).keys())
 
     sim_e = cosine_sim(
         align_vector(user_emotion, e_keys),
-        align_vector(movie_profile['emotion_scores'], e_keys),
+        align_vector(movie_profile.get('emotion_scores', {}), e_keys),
     )
     sim_n = cosine_sim(
         align_vector(user_narrative, n_keys),
-        align_vector(movie_profile['narrative_traits'], n_keys),
+        align_vector(movie_profile.get('narrative_traits', {}), n_keys),
     )
-    sim_d = cosine_sim(
-        align_vector(user_profile['ending_preference'], d_keys),
-        align_vector(movie_profile['ending_preference'], d_keys),
-    )
+    sim_dm = cosine_sim(
+        align_vector(user_profile.get('direction_mood', {}), dm_keys),
+        align_vector(movie_profile.get('direction_mood', {}), dm_keys),
+    ) if dm_keys else 0.0
 
     # 2. 좋아하는 것 보너스 계산 (정규화)
     boost_score = _calculate_boost_score_normalized(movie_profile, boost_tags, normalize_method)
@@ -230,39 +230,36 @@ def calculate_satisfaction_probability_improved(
     dislike_penalty = _calculate_dislike_penalty_max(movie_profile, dislikes)
     
     # 4. 가중치 적용
-    w_e = weights.get("emotion", 0.4)
-    w_n = weights.get("narrative", 0.4)
-    w_d = weights.get("ending", 0.2)
-    
+    w_e  = weights.get("emotion", 0.4)
+    w_n  = weights.get("narrative", 0.4)
+    w_dm = weights.get("direction_mood", 0.2)
+
     # 5. 최종 점수 계산
-    raw_score = (w_e * sim_e + w_n * sim_n + w_d * sim_d) \
+    raw_score = (w_e * sim_e + w_n * sim_n + w_dm * sim_dm) \
                 + (boost_weight * boost_score) \
                 - (penalty_weight * dislike_penalty)
     
     # 6. 확률로 변환
     if use_sigmoid:
-        # 시그모이드 변환
-        # raw_score를 0~1 범위로 정규화 후 시그모이드 적용
         normalized = (raw_score + 1) / 2
         normalized = max(0.0, min(1.0, normalized))
         probability = sigmoid(normalized, k=sigmoid_k, x0=sigmoid_x0)
     else:
-        # 선형 변환
         probability = (raw_score + 1) / 2
         probability = max(0.0, min(1.0, probability))
     
     # 7. 신뢰도 계산
-    std_dev = np.std([sim_e, sim_n, sim_d])
+    std_dev = np.std([sim_e, sim_n, sim_dm])
     confidence = 1 - min(std_dev, 1.0)
     
     # 8. 상세 분석
     breakdown = {
-        "emotion_similarity": round(float(sim_e), 3),
-        "narrative_similarity": round(float(sim_n), 3),
-        "ending_similarity": round(float(sim_d), 3),
-        "boost_score": round(float(boost_score), 3),
-        "dislike_penalty": round(float(dislike_penalty), 3),
-        "top_factors": _get_top_factors(sim_e, sim_n, sim_d)
+        "emotion_similarity":        round(float(sim_e),  3),
+        "narrative_similarity":      round(float(sim_n),  3),
+        "direction_mood_similarity": round(float(sim_dm), 3),
+        "boost_score":               round(float(boost_score), 3),
+        "dislike_penalty":           round(float(dislike_penalty), 3),
+        "top_factors": _get_top_factors(sim_e, sim_n, sim_dm)
     }
     
     return {

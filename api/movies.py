@@ -23,6 +23,10 @@ def get_movies(
     genres: Optional[str] = Query(None, description="Filter by genres (comma-separated)"),
     category: Optional[str] = Query(None, description="Category filter"),
     sort: Optional[str] = Query("latest", description="Sort by: latest, popular, rating"),
+    runtime_min: Optional[int] = Query(None, ge=0, description="Minimum runtime (minutes)"),
+    runtime_max: Optional[int] = Query(None, ge=0, description="Maximum runtime (minutes)"),
+    year_min: Optional[int] = Query(None, ge=0, description="Minimum release year"),
+    year_max: Optional[int] = Query(None, ge=0, description="Maximum release year"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db)
@@ -34,9 +38,16 @@ def get_movies(
     - **genres**: Filter by genres (comma-separated, e.g., "액션,드라마")
     - **category**: Category filter (optional)
     - **sort**: Sort order (latest, popular, rating)
+    - **runtime_min/runtime_max**: Runtime filter (minutes)
+    - **year_min/year_max**: Release year filter
     - **page**: Page number (starts from 1)
     - **page_size**: Number of items per page
     """
+    if runtime_min is not None and runtime_max is not None and runtime_min > runtime_max:
+        raise HTTPException(status_code=400, detail="runtime_min cannot be greater than runtime_max")
+    if year_min is not None and year_max is not None and year_min > year_max:
+        raise HTTPException(status_code=400, detail="year_min cannot be greater than year_max")
+
     repo = MovieRepository(db)
     skip = (page - 1) * page_size
     
@@ -48,10 +59,22 @@ def get_movies(
         genres=genre_list,
         category=category,
         sort=sort,
+        runtime_min=runtime_min,
+        runtime_max=runtime_max,
+        year_min=year_min,
+        year_max=year_max,
         skip=skip,
         limit=page_size
     )
-    total = repo.count_search(query=query, genres=genre_list, category=category)
+    total = repo.count_search(
+        query=query,
+        genres=genre_list,
+        category=category,
+        runtime_min=runtime_min,
+        runtime_max=runtime_max,
+        year_min=year_min,
+        year_max=year_max,
+    )
     
     # Convert to response format
     movie_responses = []

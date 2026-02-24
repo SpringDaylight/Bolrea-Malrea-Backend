@@ -23,6 +23,10 @@ def get_movies(
     genres: Optional[str] = Query(None, description="Filter by genres (comma-separated)"),
     category: Optional[str] = Query(None, description="Category filter"),
     sort: Optional[str] = Query("latest", description="Sort by: latest, popular, rating"),
+    runtime_min: Optional[int] = Query(None, ge=0, description="Minimum runtime (minutes)"),
+    runtime_max: Optional[int] = Query(None, ge=0, description="Maximum runtime (minutes)"),
+    year_min: Optional[int] = Query(None, ge=0, description="Minimum release year"),
+    year_max: Optional[int] = Query(None, ge=0, description="Maximum release year"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db)
@@ -34,9 +38,16 @@ def get_movies(
     - **genres**: Filter by genres (comma-separated, e.g., "액션,드라마")
     - **category**: Category filter (optional)
     - **sort**: Sort order (latest, popular, rating)
+    - **runtime_min/runtime_max**: Runtime filter (minutes)
+    - **year_min/year_max**: Release year filter
     - **page**: Page number (starts from 1)
     - **page_size**: Number of items per page
     """
+    if runtime_min is not None and runtime_max is not None and runtime_min > runtime_max:
+        raise HTTPException(status_code=400, detail="runtime_min cannot be greater than runtime_max")
+    if year_min is not None and year_max is not None and year_min > year_max:
+        raise HTTPException(status_code=400, detail="year_min cannot be greater than year_max")
+
     repo = MovieRepository(db)
     skip = (page - 1) * page_size
     
@@ -48,10 +59,22 @@ def get_movies(
         genres=genre_list,
         category=category,
         sort=sort,
+        runtime_min=runtime_min,
+        runtime_max=runtime_max,
+        year_min=year_min,
+        year_max=year_max,
         skip=skip,
         limit=page_size
     )
-    total = repo.count_search(query=query, genres=genre_list, category=category)
+    total = repo.count_search(
+        query=query,
+        genres=genre_list,
+        category=category,
+        runtime_min=runtime_min,
+        runtime_max=runtime_max,
+        year_min=year_min,
+        year_max=year_max,
+    )
     
     # Convert to response format
     movie_responses = []
@@ -132,13 +155,25 @@ def get_movie_reviews(
     skip = (page - 1) * page_size
     
     viewer_user_id = current_user.id if current_user else None
-    reviews = review_repo.get_by_movie(movie_id, skip=skip, limit=page_size, viewer_user_id=viewer_user_id)
-    total = review_repo.count_by_movie(movie_id, viewer_user_id=viewer_user_id)
+    reviews = review_repo.get_by_movie(
+        movie_id,
+        skip=skip,
+        limit=page_size,
+        viewer_user_id=viewer_user_id,
+        include_private=True,
+    )
+    total = review_repo.count_by_movie(
+        movie_id,
+        viewer_user_id=viewer_user_id,
+        include_private=True,
+    )
     
     review_responses = []
     for review in reviews:
         result = review_repo.get_with_counts(review.id)
         review_obj = result["review"]
+        is_owner = viewer_user_id and review_obj.user_id == viewer_user_id
+        content = review_obj.content if (review_obj.is_public or is_owner) else None
         review_responses.append(
             ReviewResponse(
                 id=review_obj.id,
@@ -146,7 +181,7 @@ def get_movie_reviews(
                 user_nickname=review_obj.user.nickname if review_obj.user else None,
                 movie_id=review_obj.movie_id,
                 rating=review_obj.rating,
-                content=review_obj.content,
+                content=content,
                 is_public=review_obj.is_public,
                 created_at=review_obj.created_at,
                 likes_count=result["likes_count"],

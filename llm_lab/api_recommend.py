@@ -1,12 +1,13 @@
 """
 LLM 기반 영화 추천 API
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Optional
 
 from llm_lab.recommender import LLMRecommender
 from llm_lab.orchestrator import LLMOrchestrator
+from api.deps import get_current_user_optional
 
 router = APIRouter(prefix="/api/llm", tags=["llm-recommend"])
 
@@ -162,20 +163,37 @@ async def explain_recommendation(request: ExplainRequest):
 
 
 @router.post("/satisfaction")
-async def calculate_satisfaction(request: SatisfactionRequest):
+async def calculate_satisfaction(
+    request: SatisfactionRequest,
+    current_user = Depends(get_current_user_optional)
+):
     """
     사용자 취향과 영화 특성 간의 만족도 확률 계산 (개선된 버전)
+    
+    JWT 인증을 사용하여 자동으로 사용자 정보를 가져옵니다.
+    user_id 파라미터는 하위 호환성을 위해 유지됩니다.
     """
     try:
         from db import SessionLocal
         from models import UserPreference, MovieVector
         from ml.model_sample.analysis.cal_sim import calculate_satisfaction_probability_improved
+        from api.deps import get_current_user_optional
+        
+        # JWT에서 사용자 정보 가져오기 (우선순위 1)
+        user_id = None
+        if current_user:
+            user_id = current_user.id
+            print(f"✅ [Satisfaction] JWT에서 사용자 인증: {user_id}")
+        # 하위 호환성: request body의 user_id 사용 (우선순위 2)
+        elif request.user_id:
+            user_id = request.user_id
+            print(f"⚠️ [Satisfaction] Body에서 user_id 사용 (deprecated): {user_id}")
         
         # 디버깅 로그
         print(f"🔍 [Satisfaction] Request received:")
         print(f"   - movie_id: {request.movie_id}")
-        print(f"   - user_id: {request.user_id}")
-        print(f"   - user_id type: {type(request.user_id)}")
+        print(f"   - user_id (final): {user_id}")
+        print(f"   - current_user: {current_user.id if current_user else None}")
         
         db = SessionLocal()
         
@@ -189,10 +207,10 @@ async def calculate_satisfaction(request: SatisfactionRequest):
                 raise HTTPException(status_code=404, detail="영화 벡터를 찾을 수 없습니다")
             
             # 사용자 선호도 조회 (user_id가 있으면)
-            if request.user_id:
-                print(f"✅ [Satisfaction] user_id 있음, DB 조회 시작: {request.user_id}")
+            if user_id:
+                print(f"✅ [Satisfaction] user_id 있음, DB 조회 시작: {user_id}")
                 user_pref = db.query(UserPreference).filter(
-                    UserPreference.user_id == request.user_id
+                    UserPreference.user_id == user_id
                 ).first()
                 
                 if not user_pref or not user_pref.preference_vector_json:
@@ -217,7 +235,7 @@ async def calculate_satisfaction(request: SatisfactionRequest):
             result = calculate_satisfaction_probability_improved(
                 user_profile=user_profile,
                 movie_profile=movie_profile,
-                dislikes=user_pref.dislike_tags or [],  # ✅ dislike_tags로 수정
+                dislikes=user_pref.dislike_tags or [],
                 boost_tags=user_pref.boost_tags or [],
                 use_sigmoid=True,
                 sigmoid_k=6.0,
@@ -229,7 +247,7 @@ async def calculate_satisfaction(request: SatisfactionRequest):
                 "satisfaction_probability": result['probability'],
                 "confidence": result['confidence'],
                 "breakdown": result['breakdown'],
-                "user_id": request.user_id
+                "user_id": user_id
             }
             
         finally:

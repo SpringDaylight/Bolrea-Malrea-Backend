@@ -175,12 +175,15 @@ async def calculate_satisfaction(
     
     JWT 인증을 사용하여 자동으로 사용자 정보를 가져옵니다.
     user_id 파라미터는 하위 호환성을 위해 유지됩니다.
+    
+    Redis 캐시를 사용하여 동일한 (user_id, movie_id) 조합에 대한 반복 계산을 방지합니다.
     """
     try:
         from db import SessionLocal
         from models import UserPreference, MovieVector
         from ml.model_sample.analysis.cal_sim import calculate_satisfaction_probability_improved
         from api.deps import get_current_user_optional
+        from utils.cache import cache_get, cache_set
         
         # JWT에서 사용자 정보 가져오기 (우선순위 1)
         user_id = None
@@ -192,11 +195,21 @@ async def calculate_satisfaction(
             user_id = request.user_id
             print(f"⚠️ [Satisfaction] Body에서 user_id 사용 (deprecated): {user_id}")
         
-        # 디버깅 로그
-        print(f"🔍 [Satisfaction] Request received:")
-        print(f"   - movie_id: {request.movie_id}")
-        print(f"   - user_id (final): {user_id}")
-        print(f"   - current_user: {current_user.id if current_user else None}")
+        # 로그인하지 않은 경우 에러
+        if not user_id:
+            print(f"❌ [Satisfaction] user_id 없음 - 401 반환")
+            raise HTTPException(status_code=401, detail="로그인이 필요합니다")
+        
+        # 캐시 키 생성: satisfaction:{user_id}:{movie_id}
+        cache_key = f"satisfaction:{user_id}:{request.movie_id}"
+        
+        # 캐시 확인
+        cached_result = cache_get(cache_key)
+        if cached_result:
+            print(f"✅ [Satisfaction] Cache hit: {cache_key}")
+            return cached_result
+        
+        print(f"🔍 [Satisfaction] Cache miss, calculating: {cache_key}")
         
         # Wrap database operations in thread pool
         def _execute_satisfaction_calculation():
@@ -212,23 +225,18 @@ async def calculate_satisfaction(
                 if not movie_vector:
                     raise HTTPException(status_code=404, detail="영화 벡터를 찾을 수 없습니다")
                 
-                # Wrap database query for user preference (user_id가 있으면)
-                if user_id:
-                    print(f"✅ [Satisfaction] user_id 있음, DB 조회 시작: {user_id}")
-                    user_pref = db.query(UserPreference).filter(
-                        UserPreference.user_id == user_id
-                    ).first()
-                    
-                    if not user_pref or not user_pref.preference_vector_json:
-                        print(f"❌ [Satisfaction] UserPreference 없음")
-                        raise HTTPException(status_code=404, detail="사용자 선호도를 찾을 수 없습니다")
-                    
-                    print(f"✅ [Satisfaction] UserPreference 찾음")
-                    user_profile = user_pref.preference_vector_json
-                else:
-                    # 로그인하지 않은 경우 에러
-                    print(f"❌ [Satisfaction] user_id 없음 - 401 반환")
-                    raise HTTPException(status_code=401, detail="로그인이 필요합니다")
+                # Wrap database query for user preference
+                print(f"✅ [Satisfaction] user_id 있음, DB 조회 시작: {user_id}")
+                user_pref = db.query(UserPreference).filter(
+                    UserPreference.user_id == user_id
+                ).first()
+                
+                if not user_pref or not user_pref.preference_vector_json:
+                    print(f"❌ [Satisfaction] UserPreference 없음")
+                    raise HTTPException(status_code=404, detail="사용자 선호도를 찾을 수 없습니다")
+                
+                print(f"✅ [Satisfaction] UserPreference 찾음")
+                user_profile = user_pref.preference_vector_json
                 
                 # 영화 프로필 구성
                 movie_profile = {
@@ -248,13 +256,19 @@ async def calculate_satisfaction(
                     sigmoid_x0=0.5
                 )
                 
-                return {
+                response = {
                     "movie_id": request.movie_id,
                     "satisfaction_probability": result['probability'],
                     "confidence": result['confidence'],
                     "breakdown": result['breakdown'],
                     "user_id": user_id
                 }
+                
+                # 캐시에 저장 (TTL 1시간)
+                cache_set(cache_key, response, ttl=3600)
+                print(f"✅ [Satisfaction] Cached result: {cache_key}")
+                
+                return response
                 
             finally:
                 # Ensure proper session cleanup in finally block

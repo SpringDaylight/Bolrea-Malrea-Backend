@@ -38,6 +38,14 @@ RDS_USER = os.getenv("RDS_USER", "postgres")
 # SSL Certificate path
 SSL_CERT_PATH = os.getenv("SSL_CERT_PATH", "/certs/global-bundle.pem")
 
+# Redis Configuration
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+REDIS_DB = int(os.getenv("REDIS_DB", "0"))
+REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", None)  # ElastiCache는 기본적으로 비밀번호 없음
+REDIS_SSL = os.getenv("REDIS_SSL", "false").lower() == "true"
+REDIS_ENABLED = os.getenv("REDIS_ENABLED", "true").lower() == "true"
+
 # JWT Configuration
 JWT_SECRET_ARN = os.getenv(
     "JWT_SECRET_ARN",

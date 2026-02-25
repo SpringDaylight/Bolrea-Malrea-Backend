@@ -3,7 +3,7 @@ Movie repository with custom queries
 """
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import or_, and_, func
+from sqlalchemy import or_, and_, func, collate
 
 from models import Movie, MovieGenre, MovieTag, Review
 from repositories.base import BaseRepository
@@ -30,10 +30,8 @@ class MovieRepository(BaseRepository[Movie]):
         genres: Optional[List[str]] = None,
         category: Optional[str] = None,
         sort: str = "latest",
-        runtime_min: Optional[int] = None,
-        runtime_max: Optional[int] = None,
-        year_min: Optional[int] = None,
-        year_max: Optional[int] = None,
+        runtime_ranges: Optional[List[tuple[Optional[int], Optional[int]]]] = None,
+        year_ranges: Optional[List[tuple[Optional[int], Optional[int]]]] = None,
         skip: int = 0,
         limit: int = 20
     ) -> List[tuple[Movie, int]]:
@@ -62,17 +60,33 @@ class MovieRepository(BaseRepository[Movie]):
                 MovieTag.tag.ilike(f"%{category}%")
             ).distinct()
 
-        # Runtime filter
-        if runtime_min is not None:
-            db_query = db_query.filter(Movie.runtime >= runtime_min)
-        if runtime_max is not None:
-            db_query = db_query.filter(Movie.runtime <= runtime_max)
+        # Runtime filter (OR across ranges)
+        if runtime_ranges:
+            runtime_conditions = []
+            for min_val, max_val in runtime_ranges:
+                conds = []
+                if min_val is not None:
+                    conds.append(Movie.runtime >= min_val)
+                if max_val is not None:
+                    conds.append(Movie.runtime <= max_val)
+                if conds:
+                    runtime_conditions.append(and_(*conds))
+            if runtime_conditions:
+                db_query = db_query.filter(or_(*runtime_conditions))
 
-        # Release year filter
-        if year_min is not None:
-            db_query = db_query.filter(func.extract("year", Movie.release) >= year_min)
-        if year_max is not None:
-            db_query = db_query.filter(func.extract("year", Movie.release) <= year_max)
+        # Release year filter (OR across ranges)
+        if year_ranges:
+            year_conditions = []
+            for min_val, max_val in year_ranges:
+                conds = []
+                if min_val is not None:
+                    conds.append(func.extract("year", Movie.release) >= min_val)
+                if max_val is not None:
+                    conds.append(func.extract("year", Movie.release) <= max_val)
+                if conds:
+                    year_conditions.append(and_(*conds))
+            if year_conditions:
+                db_query = db_query.filter(or_(*year_conditions))
         
         # Sorting
         db_query = db_query.group_by(Movie.id)
@@ -82,6 +96,9 @@ class MovieRepository(BaseRepository[Movie]):
         elif sort == "rating":
             # Sort by average rating
             db_query = db_query.order_by(func.coalesce(func.avg(Review.rating), 0).desc())
+        elif sort == "title":
+            # Sort by title (Korean collation)
+            db_query = db_query.order_by(collate(Movie.title, "ko_KR.utf8").asc().nullslast())
         else:  # latest (default)
             db_query = db_query.order_by(Movie.release.desc().nullslast())
         
@@ -92,10 +109,8 @@ class MovieRepository(BaseRepository[Movie]):
         query: Optional[str] = None,
         genres: Optional[List[str]] = None,
         category: Optional[str] = None,
-        runtime_min: Optional[int] = None,
-        runtime_max: Optional[int] = None,
-        year_min: Optional[int] = None,
-        year_max: Optional[int] = None,
+        runtime_ranges: Optional[List[tuple[Optional[int], Optional[int]]]] = None,
+        year_ranges: Optional[List[tuple[Optional[int], Optional[int]]]] = None,
     ) -> int:
         """Count movies matching search criteria"""
         db_query = self.db.query(Movie)
@@ -116,17 +131,33 @@ class MovieRepository(BaseRepository[Movie]):
                 MovieTag.tag.ilike(f"%{category}%")
             ).distinct()
 
-        # Runtime filter
-        if runtime_min is not None:
-            db_query = db_query.filter(Movie.runtime >= runtime_min)
-        if runtime_max is not None:
-            db_query = db_query.filter(Movie.runtime <= runtime_max)
+        # Runtime filter (OR across ranges)
+        if runtime_ranges:
+            runtime_conditions = []
+            for min_val, max_val in runtime_ranges:
+                conds = []
+                if min_val is not None:
+                    conds.append(Movie.runtime >= min_val)
+                if max_val is not None:
+                    conds.append(Movie.runtime <= max_val)
+                if conds:
+                    runtime_conditions.append(and_(*conds))
+            if runtime_conditions:
+                db_query = db_query.filter(or_(*runtime_conditions))
 
-        # Release year filter
-        if year_min is not None:
-            db_query = db_query.filter(func.extract("year", Movie.release) >= year_min)
-        if year_max is not None:
-            db_query = db_query.filter(func.extract("year", Movie.release) <= year_max)
+        # Release year filter (OR across ranges)
+        if year_ranges:
+            year_conditions = []
+            for min_val, max_val in year_ranges:
+                conds = []
+                if min_val is not None:
+                    conds.append(func.extract("year", Movie.release) >= min_val)
+                if max_val is not None:
+                    conds.append(func.extract("year", Movie.release) <= max_val)
+                if conds:
+                    year_conditions.append(and_(*conds))
+            if year_conditions:
+                db_query = db_query.filter(or_(*year_conditions))
         
         return db_query.count()
     

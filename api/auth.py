@@ -38,6 +38,7 @@ from utils.jwt import (
     JWT_COOKIE_SAMESITE,
     REFRESH_TOKEN_EXPIRES_DAYS,
 )
+from utils.refresh_token_store import RefreshTokenStore
 from datetime import date, datetime
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -62,12 +63,28 @@ def _clear_refresh_cookie(response: Response) -> None:
 def _issue_tokens(user: User, db: Session, response: Response) -> str:
     refresh_token, jti, expires_at = create_refresh_token(user.id)
     token_hash = hash_token(refresh_token)
-    RefreshTokenRepository(db).create(
-        user_id=user.id,
+    
+    # Redis에 refresh token 저장 시도
+    ttl_seconds = REFRESH_TOKEN_EXPIRES_DAYS * 24 * 60 * 60
+    redis_success = RefreshTokenStore.save(
         token_hash=token_hash,
+        user_id=user.id,
         jti=jti,
         expires_at=expires_at,
+        ttl_seconds=ttl_seconds
     )
+    
+    # Redis 실패 시 PostgreSQL fallback
+    if not redis_success:
+        from repositories.refresh_token import RefreshTokenRepository
+        print("⚠️ [Refresh] Redis unavailable, falling back to PostgreSQL")
+        RefreshTokenRepository(db).create(
+            user_id=user.id,
+            token_hash=token_hash,
+            jti=jti,
+            expires_at=expires_at,
+        )
+    
     _set_refresh_cookie(response, refresh_token)
     return create_access_token(user.id)
 
@@ -366,16 +383,39 @@ def refresh_access_token(request: Request, response: Response, db: Session = Dep
 
     payload = decode_token(refresh_token, expected_type="refresh")
     token_hash = hash_token(refresh_token)
-    repo = RefreshTokenRepository(db)
-    stored = repo.get_by_hash(token_hash)
-    if not stored or stored.revoked_at is not None:
-        raise HTTPException(status_code=401, detail="Refresh token revoked")
-    if stored.expires_at and stored.expires_at.replace(tzinfo=None) < datetime.utcnow():
-        raise HTTPException(status_code=401, detail="Refresh token expired")
-
-    # Rotate refresh token
-    repo.revoke(stored)
-    user_id = payload.get("sub")
+    
+    # Redis에서 refresh token 조회 (fallback to PostgreSQL)
+    stored = RefreshTokenStore.get(token_hash)
+    
+    # Redis 실패 시 PostgreSQL fallback
+    if stored is None:
+        from repositories.refresh_token import RefreshTokenRepository
+        print("⚠️ [Refresh] Redis unavailable, falling back to PostgreSQL")
+        
+        repo = RefreshTokenRepository(db)
+        stored_db = repo.get_by_hash(token_hash)
+        
+        if not stored_db or stored_db.revoked_at is not None:
+            raise HTTPException(status_code=401, detail="Refresh token expired or revoked")
+        
+        if stored_db.expires_at and stored_db.expires_at.replace(tzinfo=None) < datetime.utcnow():
+            repo.revoke(stored_db)
+            raise HTTPException(status_code=401, detail="Refresh token expired")
+        
+        # PostgreSQL에서 가져온 경우 revoke
+        repo.revoke(stored_db)
+        stored = {"user_id": stored_db.user_id}
+    else:
+        # Redis에서 가져온 경우
+        expires_at = datetime.fromisoformat(stored["expires_at"])
+        if expires_at.replace(tzinfo=None) < datetime.utcnow():
+            RefreshTokenStore.revoke(token_hash)
+            raise HTTPException(status_code=401, detail="Refresh token expired")
+        
+        # Rotate refresh token (기존 토큰 무효화)
+        RefreshTokenStore.revoke(token_hash)
+    
+    user_id = stored.get("user_id") or payload.get("sub")
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token payload")
 
@@ -418,10 +458,18 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)):
     refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
     if refresh_token:
         token_hash = hash_token(refresh_token)
-        repo = RefreshTokenRepository(db)
-        stored = repo.get_by_hash(token_hash)
-        if stored and stored.revoked_at is None:
-            repo.revoke(stored)
+        
+        # Redis에서 refresh token 무효화 시도
+        redis_success = RefreshTokenStore.revoke(token_hash)
+        
+        # Redis 실패 시 PostgreSQL fallback
+        if not redis_success:
+            from repositories.refresh_token import RefreshTokenRepository
+            print("⚠️ [Logout] Redis unavailable, falling back to PostgreSQL")
+            repo = RefreshTokenRepository(db)
+            stored = repo.get_by_hash(token_hash)
+            if stored and stored.revoked_at is None:
+                repo.revoke(stored)
 
     _clear_refresh_cookie(response)
     return MessageResponse(message="Logged out successfully")

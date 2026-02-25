@@ -61,7 +61,7 @@ def _generate_template_explanation(
 
 def explain_prediction(payload: dict) -> dict:
     """
-    A-4: 설명 가능한 추천
+    A-4: 설명 가능한 추천 (캐싱 적용)
     
     Args:
         payload: {
@@ -82,12 +82,29 @@ def explain_prediction(payload: dict) -> dict:
             "disclaimer": str
         }
     """
+    from utils.cache import cache_get, cache_set
+    import hashlib
+    import json
+    
     movie_title = payload.get("movie_title", "Unknown")
     match_rate = payload.get("match_rate", 0.0)
     probability = payload.get("probability", match_rate / 100.0)
     breakdown = payload.get("breakdown", {})
     user_liked_tags = payload.get("user_liked_tags", [])
     user_disliked_tags = payload.get("user_disliked_tags", [])
+    
+    # 캐시 키 생성: explanation_detail:{movie_title}:{probability_rounded}
+    # probability를 반올림하여 유사한 확률은 같은 캐시 사용
+    prob_rounded = round(probability, 2)
+    cache_key = f"explanation_detail:{movie_title}:{prob_rounded}"
+    
+    # 캐시 확인
+    cached_result = cache_get(cache_key)
+    if cached_result:
+        print(f"✅ [ExplainDetail] Cache hit: {cache_key}")
+        return cached_result
+    
+    print(f"🔍 [ExplainDetail] Cache miss, generating: {cache_key}")
     
     # 예측 결과 재구성
     prediction_result = {
@@ -129,23 +146,29 @@ def explain_prediction(payload: dict) -> dict:
     # 주요 요소 추출
     key_factors = []
     if breakdown:
-        emotion_sim = breakdown.get("emotion_similarity", 0)
+        emotion_sim   = breakdown.get("emotion_similarity", 0)
         narrative_sim = breakdown.get("narrative_similarity", 0)
-        ending_sim = breakdown.get("ending_similarity", 0)
+        direction_sim = breakdown.get("direction_mood_similarity", breakdown.get("ending_similarity", 0))
         
         key_factors = [
-            {"category": "emotion", "label": "정서 톤", "score": round(emotion_sim, 2)},
-            {"category": "narrative", "label": "서사 초점", "score": round(narrative_sim, 2)},
-            {"category": "ending", "label": "결말 취향", "score": round(ending_sim, 2)}
+            {"category": "emotion",        "label": "정서 톤",    "score": round(emotion_sim, 2)},
+            {"category": "narrative",      "label": "서사 초점",  "score": round(narrative_sim, 2)},
+            {"category": "direction_mood", "label": "연출 분위기", "score": round(direction_sim, 2)},
         ]
         
         # 점수 높은 순으로 정렬
         key_factors.sort(key=lambda x: x["score"], reverse=True)
     
-    return {
+    result = {
         "movie_title": movie_title,
         "match_rate": round(match_rate, 2),
         "explanation": explanation,
         "key_factors": key_factors,
         "disclaimer": "추천은 정서·서사 태그 분석 기반이며 개인차가 있을 수 있습니다."
     }
+    
+    # 캐시에 저장 (TTL 24시간 - 설명은 자주 바뀌지 않음)
+    cache_set(cache_key, result, ttl=86400)
+    print(f"✅ [ExplainDetail] Cached result: {cache_key}")
+    
+    return result

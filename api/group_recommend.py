@@ -61,6 +61,7 @@ class RecommendedMovie(BaseModel):
     release_year: int
     group_score: float
     prefilter_score: float
+    poster_url: Optional[str] = None
     per_user_detail: Optional[List[UserDetail]] = None
 
 
@@ -446,6 +447,7 @@ async def recommend_group_v2(request: GroupRecommendRequest):
                 "release_year": release_year,
                 "group_score": group_score,
                 "prefilter_score": float(item.get("score", 0.0)),
+                "poster_url": meta.get("poster_url"),
                 "metadata": meta,
                 "per_user_data": per_user_data  # 임시 데이터
             })

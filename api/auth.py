@@ -439,6 +439,9 @@ def change_password(payload: PasswordChangeRequest, db: Session = Depends(get_db
     if not verify_password(payload.current_password, user.password_hash):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
 
+    if verify_password(payload.new_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="New password must be different from current password")
+
     if payload.new_password != payload.new_password_confirm:
         raise HTTPException(status_code=400, detail="Password confirmation does not match")
 

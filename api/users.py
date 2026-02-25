@@ -112,8 +112,21 @@ def update_user(
 ):
     """Update current user"""
     repo = UserRepository(db)
+    current = repo.get(current_user.id)
+    if not current:
+        raise HTTPException(status_code=404, detail="User not found")
     
     user_data = user.model_dump(exclude_unset=True)
+    if "nickname" in user_data and user_data["nickname"]:
+        existing = repo.get_by_nickname(user_data["nickname"])
+        if existing and existing.id != current_user.id:
+            raise HTTPException(status_code=400, detail="Nickname already exists")
+    if "email" in user_data and user_data["email"]:
+        if user_data["email"] == current.email:
+            raise HTTPException(status_code=400, detail="Email is the same as current")
+        existing = repo.get_by_email(user_data["email"])
+        if existing and existing.id != current_user.id:
+            raise HTTPException(status_code=400, detail="Email already exists")
     db_user = repo.update(current_user.id, user_data)
     
     if not db_user:

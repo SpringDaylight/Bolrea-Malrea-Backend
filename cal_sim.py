@@ -136,12 +136,15 @@ def sigmoid(x: float, k: float = 8.0, x0: float = 0.5) -> float:
     return 1.0 / (1.0 + math.exp(-k * (x - x0)))
 
 
-def _get_top_factors(sim_e: float, sim_n: float, sim_d: float) -> List[str]:
+def _get_top_factors(sim_e: float, sim_n: float, sim_d: float,
+                     sim_dm: float = 0.0, sim_cr: float = 0.0) -> List[str]:
     """매칭에 가장 크게 기여하는 요소 식별"""
     factors = [
         ("정서 톤", sim_e),
         ("서사 초점", sim_n),
-        ("결말 취향", sim_d)
+        ("결말 취향", sim_d),
+        ("분위기 흐름", sim_dm),
+        ("인물 관계도", sim_cr),
     ]
     factors.sort(key=lambda x: x[1], reverse=True)
     return [f[0] for f in factors[:2]]
@@ -164,8 +167,8 @@ def calculate_satisfaction_probability_improved(
     top_k: int = 5
 ) -> Dict:
     """
-    개선된 만족 확률 계산
-    
+    개선된 만족 확률 계산 (5차원: emotion / narrative / ending / direction_mood / character_relationship)
+
     Args:
         user_profile: 사용자 취향 프로필
         movie_profile: 영화 특성 프로필
@@ -190,7 +193,13 @@ def calculate_satisfaction_probability_improved(
     if boost_tags is None:
         boost_tags = []
     if weights is None:
-        weights = {"emotion": 0.4, "narrative": 0.4, "ending": 0.2}
+        weights = {
+            "emotion": 0.30,
+            "narrative": 0.30,
+            "ending": 0.15,
+            "direction_mood": 0.15,
+            "character_relationship": 0.10,
+        }
     
     # 센터링 적용 (옵션)
     user_emotion = user_profile['emotion_scores']
@@ -205,22 +214,32 @@ def calculate_satisfaction_probability_improved(
         user_emotion = _apply_top_k_sparsity(user_emotion, top_k)
         user_narrative = _apply_top_k_sparsity(user_narrative, top_k)
     
-    # 1. 차원별 코사인 유사도 계산
-    e_keys = list(user_emotion.keys())
-    n_keys = list(user_narrative.keys())
-    d_keys = list(user_profile['ending_preference'].keys())
+    # 1. 차원별 코사인 유사도 계산 (5차원)
+    e_keys  = list(user_emotion.keys())
+    n_keys  = list(user_narrative.keys())
+    d_keys  = list(user_profile.get('ending_preference', {}).keys())
+    dm_keys = list(user_profile.get('direction_mood', {}).keys())
+    cr_keys = list(user_profile.get('character_relationship', {}).keys())
 
     sim_e = cosine_sim(
         align_vector(user_emotion, e_keys),
-        align_vector(movie_profile['emotion_scores'], e_keys),
+        align_vector(movie_profile.get('emotion_scores', {}), e_keys),
     )
     sim_n = cosine_sim(
         align_vector(user_narrative, n_keys),
-        align_vector(movie_profile['narrative_traits'], n_keys),
+        align_vector(movie_profile.get('narrative_traits', {}), n_keys),
     )
     sim_d = cosine_sim(
-        align_vector(user_profile['ending_preference'], d_keys),
-        align_vector(movie_profile['ending_preference'], d_keys),
+        align_vector(user_profile.get('ending_preference', {}), d_keys),
+        align_vector(movie_profile.get('ending_preference', {}), d_keys),
+    )
+    sim_dm = cosine_sim(
+        align_vector(user_profile.get('direction_mood', {}), dm_keys),
+        align_vector(movie_profile.get('direction_mood', {}), dm_keys),
+    )
+    sim_cr = cosine_sim(
+        align_vector(user_profile.get('character_relationship', {}), cr_keys),
+        align_vector(movie_profile.get('character_relationship', {}), cr_keys),
     )
 
     # 2. 좋아하는 것 보너스 계산 (정규화)
@@ -230,12 +249,15 @@ def calculate_satisfaction_probability_improved(
     dislike_penalty = _calculate_dislike_penalty_max(movie_profile, dislikes)
     
     # 4. 가중치 적용
-    w_e = weights.get("emotion", 0.4)
-    w_n = weights.get("narrative", 0.4)
-    w_d = weights.get("ending", 0.2)
-    
-    # 5. 최종 점수 계산
-    raw_score = (w_e * sim_e + w_n * sim_n + w_d * sim_d) \
+    w_e  = weights.get("emotion", 0.30)
+    w_n  = weights.get("narrative", 0.30)
+    w_d  = weights.get("ending", 0.15)
+    w_dm = weights.get("direction_mood", 0.15)
+    w_cr = weights.get("character_relationship", 0.10)
+
+    # 5. 최종 점수 계산 (5차원 가중합)
+    raw_score = (w_e * sim_e + w_n * sim_n + w_d * sim_d
+                 + w_dm * sim_dm + w_cr * sim_cr) \
                 + (boost_weight * boost_score) \
                 - (penalty_weight * dislike_penalty)
     
@@ -252,17 +274,19 @@ def calculate_satisfaction_probability_improved(
         probability = max(0.0, min(1.0, probability))
     
     # 7. 신뢰도 계산
-    std_dev = np.std([sim_e, sim_n, sim_d])
+    std_dev = np.std([sim_e, sim_n, sim_d, sim_dm, sim_cr])
     confidence = 1 - min(std_dev, 1.0)
-    
+
     # 8. 상세 분석
     breakdown = {
-        "emotion_similarity": round(float(sim_e), 3),
-        "narrative_similarity": round(float(sim_n), 3),
-        "ending_similarity": round(float(sim_d), 3),
-        "boost_score": round(float(boost_score), 3),
-        "dislike_penalty": round(float(dislike_penalty), 3),
-        "top_factors": _get_top_factors(sim_e, sim_n, sim_d)
+        "emotion_similarity":              round(float(sim_e), 3),
+        "narrative_similarity":            round(float(sim_n), 3),
+        "ending_similarity":               round(float(sim_d), 3),
+        "direction_mood_similarity":       round(float(sim_dm), 3),
+        "character_relationship_similarity": round(float(sim_cr), 3),
+        "boost_score":                     round(float(boost_score), 3),
+        "dislike_penalty":                 round(float(dislike_penalty), 3),
+        "top_factors": _get_top_factors(sim_e, sim_n, sim_d, sim_dm, sim_cr),
     }
     
     return {

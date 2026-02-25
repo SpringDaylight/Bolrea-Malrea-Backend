@@ -27,6 +27,14 @@ def get_movies(
     runtime_max: Optional[int] = Query(None, ge=0, description="Maximum runtime (minutes)"),
     year_min: Optional[int] = Query(None, ge=0, description="Minimum release year"),
     year_max: Optional[int] = Query(None, ge=0, description="Maximum release year"),
+    runtime_ranges: Optional[str] = Query(
+        None,
+        description="Runtime ranges (comma-separated keys: under-100, between-100-120, between-120-140, over-140)",
+    ),
+    year_ranges: Optional[str] = Query(
+        None,
+        description="Year ranges (comma-separated keys: pre1950, 1950s, 1960s, 1970s, 1980s, 1990s, 2000s, 2010s, 2020plus)",
+    ),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db)
@@ -40,6 +48,7 @@ def get_movies(
     - **sort**: Sort order (latest, popular, rating)
     - **runtime_min/runtime_max**: Runtime filter (minutes)
     - **year_min/year_max**: Release year filter
+    - **runtime_ranges/year_ranges**: OR-based multi-range filters (comma-separated keys)
     - **page**: Page number (starts from 1)
     - **page_size**: Number of items per page
     """
@@ -47,6 +56,40 @@ def get_movies(
         raise HTTPException(status_code=400, detail="runtime_min cannot be greater than runtime_max")
     if year_min is not None and year_max is not None and year_min > year_max:
         raise HTTPException(status_code=400, detail="year_min cannot be greater than year_max")
+
+    runtime_range_map = {
+        "under-100": (None, 100),
+        "between-100-120": (100, 120),
+        "between-120-140": (120, 140),
+        "over-140": (140, None),
+    }
+    year_range_map = {
+        "pre1950": (None, 1949),
+        "1950s": (1950, 1959),
+        "1960s": (1960, 1969),
+        "1970s": (1970, 1979),
+        "1980s": (1980, 1989),
+        "1990s": (1990, 1999),
+        "2000s": (2000, 2009),
+        "2010s": (2010, 2019),
+        "2020plus": (2020, None),
+    }
+
+    runtime_range_list = []
+    if runtime_ranges:
+        for key in [v.strip() for v in runtime_ranges.split(",") if v.strip()]:
+            if key in runtime_range_map:
+                runtime_range_list.append(runtime_range_map[key])
+    if runtime_min is not None or runtime_max is not None:
+        runtime_range_list.append((runtime_min, runtime_max))
+
+    year_range_list = []
+    if year_ranges:
+        for key in [v.strip() for v in year_ranges.split(",") if v.strip()]:
+            if key in year_range_map:
+                year_range_list.append(year_range_map[key])
+    if year_min is not None or year_max is not None:
+        year_range_list.append((year_min, year_max))
 
     repo = MovieRepository(db)
     skip = (page - 1) * page_size
@@ -59,10 +102,8 @@ def get_movies(
         genres=genre_list,
         category=category,
         sort=sort,
-        runtime_min=runtime_min,
-        runtime_max=runtime_max,
-        year_min=year_min,
-        year_max=year_max,
+        runtime_ranges=runtime_range_list or None,
+        year_ranges=year_range_list or None,
         skip=skip,
         limit=page_size
     )
@@ -70,10 +111,8 @@ def get_movies(
         query=query,
         genres=genre_list,
         category=category,
-        runtime_min=runtime_min,
-        runtime_max=runtime_max,
-        year_min=year_min,
-        year_max=year_max,
+        runtime_ranges=runtime_range_list or None,
+        year_ranges=year_range_list or None,
     )
     
     # Convert to response format

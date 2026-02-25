@@ -308,6 +308,15 @@ class UserPreference(Base):
     boost_tags = Column(JSONB, nullable=False, default=list, comment="좋아하는 태그 리스트")
     dislike_tags = Column(JSONB, nullable=False, default=list, comment="제외/비선호 태그 리스트")
     penalty_tags = Column(JSONB, nullable=False, default=list, comment="싫어하는 태그 리스트")
+    
+    # Survey fields
+    favorite_genres = Column(JSONB, nullable=True, default=list, comment="좋아하는 장르 리스트")
+    disliked_genres = Column(JSONB, nullable=True, default=list, comment="싫어하는 장르 리스트")
+    viewing_context = Column(String, nullable=True, comment="영화 감상 맥락 (혼자/연인/가족/자기전/주말)")
+    preferred_vibe = Column(String, nullable=True, comment="선호 분위기 (가볍고 유쾌한/감동적/충격적 등)")
+    interest_keywords = Column(JSONB, nullable=True, default=list, comment="관심 키워드 리스트")
+    preferred_origin = Column(String, nullable=True, comment="선호 국적 (한국/미국/일본/유럽/고전)")
+    
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
 

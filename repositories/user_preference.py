@@ -26,7 +26,13 @@ class UserPreferenceRepository(BaseRepository[UserPreference]):
         persona_code: str = None,
         boost_tags: list = None,
         dislike_tags: list = None,
-        penalty_tags: list = None
+        penalty_tags: list = None,
+        favorite_genres: list = None,
+        disliked_genres: list = None,
+        viewing_context: str = None,
+        preferred_vibe: str = None,
+        interest_keywords: list = None,
+        preferred_origin: str = None
     ) -> UserPreference:
         """
         Insert or update user preference (upsert operation)
@@ -38,6 +44,12 @@ class UserPreferenceRepository(BaseRepository[UserPreference]):
             boost_tags: List of liked tags
             dislike_tags: List of disliked tags
             penalty_tags: List of penalty tags
+            favorite_genres: 좋아하는 장르 리스트
+            disliked_genres: 싫어하는 장르 리스트
+            viewing_context: 영화 감상 맥락
+            preferred_vibe: 선호 분위기
+            interest_keywords: 관심 키워드 리스트
+            preferred_origin: 선호 국적
         
         Returns:
             UserPreference object
@@ -53,6 +65,12 @@ class UserPreferenceRepository(BaseRepository[UserPreference]):
             existing.boost_tags = boost_tags or []
             existing.dislike_tags = dislike_tags or []
             existing.penalty_tags = penalty_tags or []
+            existing.favorite_genres = favorite_genres or []
+            existing.disliked_genres = disliked_genres or []
+            existing.viewing_context = viewing_context
+            existing.preferred_vibe = preferred_vibe
+            existing.interest_keywords = interest_keywords or []
+            existing.preferred_origin = preferred_origin
             existing.updated_at = datetime.utcnow()
             
             self.db.commit()
@@ -75,7 +93,13 @@ class UserPreferenceRepository(BaseRepository[UserPreference]):
                 persona_code=persona_code,
                 boost_tags=boost_tags or [],
                 dislike_tags=dislike_tags or [],
-                penalty_tags=penalty_tags or []
+                penalty_tags=penalty_tags or [],
+                favorite_genres=favorite_genres or [],
+                disliked_genres=disliked_genres or [],
+                viewing_context=viewing_context,
+                preferred_vibe=preferred_vibe,
+                interest_keywords=interest_keywords or [],
+                preferred_origin=preferred_origin
             )
             self.db.add(new_preference)
             self.db.commit()

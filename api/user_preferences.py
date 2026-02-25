@@ -43,6 +43,14 @@ class SaveUserPreferenceRequest(BaseModel):
     boost_tags: List[str] = Field(default_factory=list, description="List of liked tags")
     dislike_tags: List[str] = Field(default_factory=list, description="List of disliked tags")
     penalty_tags: List[str] = Field(default_factory=list, description="List of penalty tags")
+    
+    # Survey fields
+    favorite_genres: Optional[List[str]] = Field(None, description="좋아하는 장르 리스트")
+    disliked_genres: Optional[List[str]] = Field(None, description="싫어하는 장르 리스트")
+    viewing_context: Optional[str] = Field(None, description="영화 감상 맥락")
+    preferred_vibe: Optional[str] = Field(None, description="선호 분위기")
+    interest_keywords: Optional[List[str]] = Field(None, description="관심 키워드 리스트")
+    preferred_origin: Optional[str] = Field(None, description="선호 국적")
 
 
 # ============================================
@@ -62,6 +70,7 @@ def get_user_preference(
     - boost_tags: liked tags
     - dislike_tags: disliked tags
     - penalty_tags: penalty tags
+    - Survey fields: favorite_genres, disliked_genres, viewing_context, etc.
     """
     repo = UserPreferenceRepository(db)
     preference = repo.get_by_user_id(user_id)
@@ -78,6 +87,12 @@ def get_user_preference(
         persona_code=preference.persona_code,
         boost_tags=preference.boost_tags,
         penalty_tags=preference.penalty_tags,
+        favorite_genres=preference.favorite_genres,
+        disliked_genres=preference.disliked_genres,
+        viewing_context=preference.viewing_context,
+        preferred_vibe=preference.preferred_vibe,
+        interest_keywords=preference.interest_keywords,
+        preferred_origin=preference.preferred_origin,
         updated_at=preference.updated_at
     )
 
@@ -108,7 +123,13 @@ def save_user_preference(
         persona_code=request.persona_code,
         boost_tags=request.boost_tags,
         dislike_tags=request.dislike_tags,
-        penalty_tags=request.penalty_tags
+        penalty_tags=request.penalty_tags,
+        favorite_genres=request.favorite_genres,
+        disliked_genres=request.disliked_genres,
+        viewing_context=request.viewing_context,
+        preferred_vibe=request.preferred_vibe,
+        interest_keywords=request.interest_keywords,
+        preferred_origin=request.preferred_origin
     )
     
     return UserPreferenceResponse(
@@ -117,6 +138,12 @@ def save_user_preference(
         persona_code=preference.persona_code,
         boost_tags=preference.boost_tags,
         penalty_tags=preference.penalty_tags,
+        favorite_genres=preference.favorite_genres,
+        disliked_genres=preference.disliked_genres,
+        viewing_context=preference.viewing_context,
+        preferred_vibe=preference.preferred_vibe,
+        interest_keywords=preference.interest_keywords,
+        preferred_origin=preference.preferred_origin,
         updated_at=preference.updated_at
     )
 

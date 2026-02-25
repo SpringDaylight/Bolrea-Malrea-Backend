@@ -297,6 +297,15 @@ class UserPreferenceResponse(BaseSchema):
     persona_code: Optional[str] = None
     boost_tags: List[str] = []
     penalty_tags: List[str] = []
+    
+    # Survey fields
+    favorite_genres: Optional[List[str]] = None
+    disliked_genres: Optional[List[str]] = None
+    viewing_context: Optional[str] = None
+    preferred_vibe: Optional[str] = None
+    interest_keywords: Optional[List[str]] = None
+    preferred_origin: Optional[str] = None
+    
     updated_at: datetime
 
 

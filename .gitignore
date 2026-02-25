@@ -191,6 +191,10 @@ cython_debug/
 # Ruff 관련
 .ruff_cache/
 
+# 캐시 파일
+cache/
+*.pkl
+
 # PyPI 설정 파일
 .pypirc
 

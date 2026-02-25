@@ -177,6 +177,7 @@ class MovieListResponse(BaseSchema):
 class ReviewBase(BaseSchema):
     rating: Decimal = Field(..., ge=0.5, le=5.0, description="0.5~5.0, 0.5 단위")
     content: Optional[str] = None
+    keywords: List[str] = []
     is_public: bool = True
 
 
@@ -187,6 +188,7 @@ class ReviewCreate(ReviewBase):
 class ReviewUpdate(BaseSchema):
     rating: Optional[Decimal] = Field(None, ge=0.5, le=5.0)
     content: Optional[str] = None
+    keywords: Optional[List[str]] = None
     is_public: Optional[bool] = None
 
 
@@ -199,6 +201,7 @@ class ReviewResponse(ReviewBase):
     likes_count: int = 0
     dislikes_count: int = 0
     comments_count: int = 0
+    keywords: List[str] = []
 
 
 

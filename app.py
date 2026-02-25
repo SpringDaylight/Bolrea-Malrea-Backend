@@ -24,6 +24,23 @@ app = FastAPI(
     version="1.1.8"
 )
 
+
+@app.on_event("startup")
+def run_startup_migrations():
+    """앱 시작 시 누락된 DB 컬럼을 자동으로 추가합니다."""
+    from db import SessionLocal
+    db = SessionLocal()
+    try:
+        db.execute(__import__('sqlalchemy').text(
+            "ALTER TABLE reviews ADD COLUMN IF NOT EXISTS keywords JSONB DEFAULT '[]'::jsonb"
+        ))
+        db.commit()
+    except Exception as e:
+        print(f"[startup migration] warning: {e}")
+    finally:
+        db.close()
+
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,

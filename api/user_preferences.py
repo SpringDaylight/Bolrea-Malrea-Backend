@@ -299,11 +299,15 @@ def get_user_wordcloud(
             moods = pref_vector.get("direction_mood", {})
             narratives = pref_vector.get("narrative_traits", {})
             
-            # 핵심 4개 성분 점수 (임의 계산 방식)
-            dopamine_score = max(0, moods.get("긴장되는", 0) + narratives.get("반전이 한 번 크게 있어요", 0)) * 100
-            sensitivity_score = max(0, emotions.get("감동적이에요", 0) + emotions.get("슬퍼요", 0) + emotions.get("따뜻해요", 0)) * 100
-            brain_score = max(0, narratives.get("생각하면서 봐야 해요", 0) + pref_vector.get("ending_preference", {}).get("열린 결말이에요", 0) * 0.5) * 100
-            eye_score = max(0, moods.get("영상미가 뛰어나요", 0) + emotions.get("몽환적이에요", 0)) * 100
+            # 핵심 4개 성분 점수 (평균 기반 → 0~100 범위 유지)
+            dopamine_score = max(0, moods.get("긴장되는", 0)) * 100
+            sensitivity_score = max(0, (emotions.get("감동적이에요", 0) + emotions.get("슬퍼요", 0) + emotions.get("따뜻해요", 0)) / 3) * 100
+            brain_score = max(0, (narratives.get("생각하면서 봐야 해요", 0) + pref_vector.get("ending_preference", {}).get("open", 0) * 0.3) / 2) * 100
+            eye_score = max(0, (moods.get("영상미가 뛰어나요", 0) + emotions.get("몽환적이에요", 0)) / 2) * 100
+
+            # 칼로리 동적 계산 (4개 성분 합산 기반, 400~2800 kcal 범위)
+            total_energy = dopamine_score + sensitivity_score + brain_score + eye_score
+            calories_kcal = int(total_energy * 6 + 400)
             
             # 특별 첨가물 추출 (가장 높은 3개 특징)
             all_traits = {**emotions, **moods, **narratives}
@@ -329,7 +333,7 @@ def get_user_wordcloud(
             ax.text(0.5, y, "영화 관람 열량 (리뷰 에너지)", fontsize=14, fontproperties=fp_bold)
             y -= 1.0
             ax.text(0.5, y, "Calories", fontsize=24, fontproperties=fp_bold)
-            ax.text(9.5, y, "1,984 kcal", fontsize=28, ha='right', fontproperties=fp_bold)
+            ax.text(9.5, y, f"{calories_kcal:,} kcal", fontsize=28, ha='right', fontproperties=fp_bold)
             y -= 0.5
             ax.axhline(y, color='black', linewidth=6, xmin=0.05, xmax=0.95)
             y -= 0.7
@@ -342,8 +346,8 @@ def get_user_wordcloud(
             # 영양소 항목들 그리기
             def draw_nutrient(y_pos, name, score, color_hex):
                 ax.text(0.5, y_pos, name, fontsize=15, fontproperties=fp_bold)
-                # 퍼센트 텍스트 계산 (0~100 사이로 보정)
-                pct_val = min(100, max(0, int(score * 1.5)))
+                # 퍼센트 표시: 상한 80% (100%가 나오지 않도록)
+                pct_val = min(90, max(0, int(score)))
                 
                 # 퍼센트가 0일 경우에도 약간은 채워지게 보이는 버그 수정 
                 # (pct_val이 표시 퍼센트이자 막대 길이를 결정하도록 통일)

@@ -63,7 +63,7 @@ class BaseRepository(Generic[ModelType]):
             return None
         
         for key, value in obj_in.items():
-            if value is not None and hasattr(db_obj, key):
+            if hasattr(db_obj, key):
                 setattr(db_obj, key, value)
         
         self.db.commit()

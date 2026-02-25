@@ -44,6 +44,7 @@ def get_review(
         movie_id=review.movie_id,
         rating=review.rating,
         content=review.content,
+        keywords=review.keywords or [],
         is_public=review.is_public,
         created_at=review.created_at,
         likes_count=result["likes_count"],
@@ -134,6 +135,7 @@ def create_review(
         movie_id=db_review.movie_id,
         rating=db_review.rating,
         content=db_review.content,
+        keywords=db_review.keywords or [],
         is_public=db_review.is_public,
         created_at=db_review.created_at,
         likes_count=0,
@@ -154,8 +156,13 @@ def update_review(
     from domain.a1_preference import analyze_preference
     
     repo = ReviewRepository(db)
-    
     review_data = review.model_dump(exclude_unset=True)
+    
+    # exclude_unset=True removes 'content' if it's explicitly set to None (in some Pydantic versions)
+    # or keeps it. Let's ensure if 'content' is explicitly in the incoming payload as None, we update it.
+    if "content" in review.model_fields_set:
+        review_data["content"] = review.content
+
     db_review = repo.update(review_id, review_data)
     
     if not db_review:
@@ -210,6 +217,7 @@ def update_review(
         movie_id=review_obj.movie_id,
         rating=review_obj.rating,
         content=review_obj.content,
+        keywords=review_obj.keywords or [],
         is_public=review_obj.is_public,
         created_at=review_obj.created_at,
         likes_count=result["likes_count"],

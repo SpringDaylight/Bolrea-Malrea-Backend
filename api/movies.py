@@ -221,6 +221,7 @@ def get_movie_reviews(
                 movie_id=review_obj.movie_id,
                 rating=review_obj.rating,
                 content=content,
+                keywords=review_obj.keywords or [],
                 is_public=review_obj.is_public,
                 created_at=review_obj.created_at,
                 likes_count=result["likes_count"],

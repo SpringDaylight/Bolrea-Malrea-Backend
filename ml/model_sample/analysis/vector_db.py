@@ -171,6 +171,7 @@ def build_vector_db(movies: List[Dict], profiles: List[Dict], e_keys: List[str],
             'genres': movie.get('genres', []),
             'release_year': movie.get('release_year'),
             'runtime': movie.get('runtime'),
+            'poster_url': movie.get('poster_url'),
             'profile': profile  # 전체 프로필도 저장
         }
         

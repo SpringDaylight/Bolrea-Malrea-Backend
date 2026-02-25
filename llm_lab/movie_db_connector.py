@@ -24,7 +24,8 @@ class MovieDBConnector:
         top_k: int = 20,
         genres: Optional[List[str]] = None,
         year_from: Optional[int] = None,
-        year_to: Optional[int] = None
+        year_to: Optional[int] = None,
+        exclude_movie_ids: Optional[List[int]] = None
     ) -> List[Dict]:
         """
         키워드 기반 영화 검색 (DB에서 직접 검색)
@@ -44,6 +45,10 @@ class MovieDBConnector:
         
         # 1. Movie 테이블에서 검색
         query = self.db.query(Movie)
+        
+        # 1-1. 이미 본 영화 제외
+        if exclude_movie_ids:
+            query = query.filter(~Movie.id.in_(exclude_movie_ids))
         
         # 2. 키워드 필터 (title 또는 synopsis에 포함)
         keyword_filters = []
@@ -125,7 +130,8 @@ class MovieDBConnector:
         year_from: Optional[int] = None,
         year_to: Optional[int] = None,
         keyword_weight: float = 0.3,
-        emotion_weight: float = 0.7
+        emotion_weight: float = 0.7,
+        exclude_movie_ids: Optional[List[int]] = None
     ) -> List[Dict]:
         """
         하이브리드 검색: 감성 벡터 + 키워드 매칭
@@ -152,7 +158,8 @@ class MovieDBConnector:
             top_k=top_k * 3,  # 더 많이 가져와서 키워드와 결합
             genres=genres,
             year_from=year_from,
-            year_to=year_to
+            year_to=year_to,
+            exclude_movie_ids=exclude_movie_ids
         )
         
         # 3. 키워드 매칭 점수 계산
@@ -182,7 +189,8 @@ class MovieDBConnector:
         top_k: int = 20,
         genres: Optional[List[str]] = None,
         year_from: Optional[int] = None,
-        year_to: Optional[int] = None
+        year_to: Optional[int] = None,
+        exclude_movie_ids: Optional[List[int]] = None
     ) -> List[Dict]:
         """
         감성 점수 기반 영화 검색
@@ -199,6 +207,10 @@ class MovieDBConnector:
         """
         # 1. movie_vectors 테이블에서 모든 영화 가져오기
         query = self.db.query(MovieVector).join(Movie, MovieVector.movie_id == Movie.id)
+        
+        # 1-1. 이미 본 영화 제외
+        if exclude_movie_ids:
+            query = query.filter(~MovieVector.movie_id.in_(exclude_movie_ids))
         
         # 2. 연도 필터 적용
         if year_from:

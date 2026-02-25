@@ -251,6 +251,27 @@ async def recommend_group_v2(request: GroupRecommendRequest):
         if request.year_to is not None:
             filters["year_to"] = request.year_to
         
+        # 5-1. 그룹 멤버들이 본 영화 ID 수집 (모든 멤버가 본 영화 제외)
+        from repositories.watched import WatchedMovieRepository
+        watched_repo = WatchedMovieRepository(db)
+        
+        all_watched_movie_ids = set()
+        for user in request.users:
+            # user_id로 먼저 users 테이블에서 실제 id를 찾기
+            from repositories.user import UserRepository
+            user_repo = UserRepository(db)
+            db_user = user_repo.get_by_user_id(user.user_id)
+            
+            if not db_user:
+                db_user = user_repo.get(user.user_id)
+            
+            if db_user:
+                watched_ids = watched_repo.get_watched_movie_ids(db_user.id)
+                all_watched_movie_ids.update(watched_ids)
+        
+        if all_watched_movie_ids:
+            print(f"   그룹 멤버들이 본 영화 {len(all_watched_movie_ids)}개 제외")
+        
         # 6. 그룹 추천 실행
         print(f"   벡터 DB 로드 완료 ({time.time() - step_start:.2f}초)")
         step_start = time.time()
@@ -355,6 +376,15 @@ async def recommend_group_v2(request: GroupRecommendRequest):
         
         # 후보 검색
         candidates = vec_db.search(query_vec, k=request.candidate_k, filters=filters if filters else None)
+        
+        # watched 영화 필터링
+        if all_watched_movie_ids:
+            original_count = len(candidates)
+            candidates = [c for c in candidates if c["metadata"].get("id") not in all_watched_movie_ids]
+            filtered_count = original_count - len(candidates)
+            if filtered_count > 0:
+                print(f"   후보에서 본 영화 {filtered_count}개 제외됨")
+        
         print(f"   후보 검색 완료: {len(candidates)}개 ({time.time() - step_start:.2f}초)")
         
         # 랭킹 (1단계: 만족도 계산만, LLM 설명은 나중에)

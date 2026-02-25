@@ -99,6 +99,15 @@ async def recommend_movies(request: RecommendRequest):
     try:
         repo = MovieVectorRepository(db)
         
+        # 0. 사용자가 본 영화 ID 가져오기 (로그인한 경우)
+        exclude_movie_ids = []
+        if current_user:
+            from repositories.watched import WatchedMovieRepository
+            watched_repo = WatchedMovieRepository(db)
+            exclude_movie_ids = watched_repo.get_watched_movie_ids(current_user.id)
+            if exclude_movie_ids:
+                print(f"✅ [LLM Recommend] 사용자가 본 영화 {len(exclude_movie_ids)}개 제외")
+        
         # 1. 사용자 입력에서 감성 프로필 생성 (A-1 로직 사용)
         from domain.a1_preference import analyze_preference
         user_profile = analyze_preference({"text": request.user_input})
@@ -109,9 +118,13 @@ async def recommend_movies(request: RecommendRequest):
         if not all_vectors:
             raise HTTPException(status_code=404, detail="영화 벡터 데이터가 없습니다")
         
-        # 3. 유사도 계산
+        # 3. 유사도 계산 (watched 영화 제외)
         recommendations = []
         for vector_data in all_vectors:
+            # 이미 본 영화는 스킵
+            if vector_data["movie_id"] in exclude_movie_ids:
+                continue
+            
             movie_profile = {
                 "emotion_scores": vector_data["emotion_scores"],
                 "narrative_traits": vector_data["narrative_traits"],

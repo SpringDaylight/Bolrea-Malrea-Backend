@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from api import movies, reviews, users, auth, gamification, cocktail, user_preferences, questions, roulette, group_recommend
 from llm_lab.api import router as llm_lab_router
 from llm_lab.api_recommend import router as llm_recommend_router
+from llm_lab.api_personalized import router as personalized_router
 from utils.validator import validate_request
 
 from domain.a1_preference import analyze_preference
@@ -68,6 +69,7 @@ app.include_router(roulette.router)
 app.include_router(group_recommend.router)
 app.include_router(llm_lab_router)
 app.include_router(llm_recommend_router)
+app.include_router(personalized_router)
 
 
 @app.get("/")

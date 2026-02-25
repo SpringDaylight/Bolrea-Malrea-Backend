@@ -57,11 +57,21 @@ class LLMOrchestrator:
         # Step 1: Planner LLM - 요청 분석
         query_plan = self._plan_query(user_input)
         
+        # 사용자가 본 영화 ID 가져오기
+        exclude_movie_ids = []
+        if user_id:
+            from repositories.watched import WatchedMovieRepository
+            watched_repo = WatchedMovieRepository(self.db_connector.db)
+            exclude_movie_ids = watched_repo.get_watched_movie_ids(user_id)
+            if exclude_movie_ids:
+                print(f"✅ [Orchestrator] 사용자가 본 영화 {len(exclude_movie_ids)}개 제외")
+        
         # Step 2: Multi-source Retrieval (가중치 결정 포함)
         candidates, keyword_weight, emotion_weight, keyword_results, vector_results = self._retrieve_candidates_with_weights(
             user_input=user_input,
             query_plan=query_plan,
-            pool_size=candidate_pool_size
+            pool_size=candidate_pool_size,
+            exclude_movie_ids=exclude_movie_ids
         )
         
         if not candidates:
@@ -112,7 +122,8 @@ class LLMOrchestrator:
         self,
         user_input: str,
         query_plan: Dict,
-        pool_size: int
+        pool_size: int,
+        exclude_movie_ids: Optional[List[int]] = None
     ) -> tuple[List[Dict], float, float, List[Dict], List[Dict]]:
         """
         후보 수집 + 가중치 반환 + 원본 소스별 결과 반환
@@ -122,7 +133,7 @@ class LLMOrchestrator:
         """
         # 기존 _retrieve_candidates 로직 + 가중치 + 원본 결과 반환
         candidates, keyword_results, vector_results = self._retrieve_candidates(
-            user_input, query_plan, pool_size
+            user_input, query_plan, pool_size, exclude_movie_ids
         )
         
         # 가중치 다시 계산 (반환용)
@@ -200,7 +211,8 @@ JSON만 출력하세요:"""
         self,
         user_input: str,
         query_plan: Dict,
-        pool_size: int
+        pool_size: int,
+        exclude_movie_ids: Optional[List[int]] = None
     ) -> tuple[List[Dict], List[Dict], List[Dict]]:
         """
         Step 2: Multi-source Retrieval
@@ -252,7 +264,8 @@ JSON만 출력하세요:"""
                 keyword_results = self.db_connector.search_movies_by_keyword(
                     keywords=keywords,
                     top_k=pool_size,
-                    genres=query_plan.get("genres")
+                    genres=query_plan.get("genres"),
+                    exclude_movie_ids=exclude_movie_ids
                 )
                 
                 # 디버깅: 키워드 검색 결과 출력
@@ -284,7 +297,8 @@ JSON만 출력하세요:"""
             vector_results = self.db_connector.search_movies_by_emotion(
                 emotion_scores=emotion_scores,
                 top_k=pool_size,
-                genres=query_plan.get("genres")
+                genres=query_plan.get("genres"),
+                exclude_movie_ids=exclude_movie_ids
             )
             
             # 디버깅: 벡터 검색 결과 출력

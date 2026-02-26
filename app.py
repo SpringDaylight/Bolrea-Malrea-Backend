@@ -48,8 +48,9 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",  # 로컬 개발
         "http://localhost:3000",  # 로컬 개발 (대체 포트)
-        "http://bolrae-malrae-frontend.s3-website.ap-northeast-2.amazonaws.com",  # S3 프로덕션
-        "https://bolreamalrea.com",  # 프로덕션 도메인
+        "http://bolrae-malrae-frontend.s3-website.ap-northeast-2.amazonaws.com",  # S3 웹 호스팅
+        "https://bolreamalrea.com",  # 프로덕션 도메인 (HTTPS)
+        "https://www.bolreamalrea.com",  # 프로덕션 도메인 www (HTTPS)
         # 추가 도메인이 있으면 여기에 추가
     ],
     allow_credentials=True,

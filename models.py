@@ -38,20 +38,25 @@ class User(Base):
     last_feeding_date = Column(String, nullable=True) # YYYY-MM-DD
     last_question_date = Column(String, nullable=True) # YYYY-MM-DD
     current_question_index = Column(Integer, default=0)
+    last_roulette_date = Column(String, nullable=True) # YYYY-MM-DD
 
     # Relationships
     reviews = relationship("Review", back_populates="user", cascade="all, delete-orphan")
     review_likes = relationship("ReviewLike", back_populates="user", cascade="all, delete-orphan")
+    comment_likes = relationship("CommentLike", back_populates="user", cascade="all, delete-orphan")
     comments = relationship("Comment", back_populates="user", cascade="all, delete-orphan")
     taste_analysis = relationship("TasteAnalysis", back_populates="user", uselist=False, cascade="all, delete-orphan")
     group_decisions = relationship("GroupDecision", back_populates="owner", cascade="all, delete-orphan")
     group_memberships = relationship("GroupMember", back_populates="user", cascade="all, delete-orphan")
+    watched_movies = relationship("WatchedMovie", back_populates="user", cascade="all, delete-orphan")
     
     # Gamification Relationships
     flavor_stats = relationship("FlavorStat", back_populates="user", cascade="all, delete-orphan")
     inventory = relationship("ThemeInventory", back_populates="user", cascade="all, delete-orphan")
     history = relationship("QuestionHistory", back_populates="user", cascade="all, delete-orphan")
     auth_accounts = relationship("UserAuth", back_populates="user", cascade="all, delete-orphan")
+    roulette_rewards = relationship("RouletteReward", back_populates="user", cascade="all, delete-orphan")
+    refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
 
 
 class UserAuth(Base):
@@ -70,7 +75,22 @@ class UserAuth(Base):
     __table_args__ = (
         UniqueConstraint("provider", "provider_user_id", name="uq_user_auth_provider_user"),
         Index("ix_user_auth_provider_user", "provider", "provider_user_id"),
-    )
+    ) 
+
+
+class RefreshToken(Base):
+    """Refresh token storage"""
+    __tablename__ = "refresh_tokens"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash = Column(String, nullable=False, unique=True, index=True)
+    jti = Column(String, nullable=False, unique=True, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="refresh_tokens")
 
 
 class Movie(Base):
@@ -83,6 +103,7 @@ class Movie(Base):
     runtime = Column(Integer, nullable=True, comment="러닝타임(분)")
     synopsis = Column(Text, nullable=True, comment="시놉시스")
     poster_url = Column(String, nullable=True)
+    keywords = Column(JSONB, nullable=True)
     avg_rating = Column(Numeric(2, 1), nullable=True, comment="Average rating (0.5 steps)")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -90,6 +111,7 @@ class Movie(Base):
     genres = relationship("MovieGenre", back_populates="movie", cascade="all, delete-orphan")
     tags = relationship("MovieTag", back_populates="movie", cascade="all, delete-orphan")
     reviews = relationship("Review", back_populates="movie", cascade="all, delete-orphan")
+    watched_by = relationship("WatchedMovie", back_populates="movie", cascade="all, delete-orphan")
 
 
 class MovieGenre(Base):
@@ -151,6 +173,10 @@ class Review(Base):
     movie_id = Column(Integer, ForeignKey("movies.id", ondelete="CASCADE"), nullable=False, index=True)
     rating = Column(Numeric(2, 1), nullable=False, comment="0.5~5.0, 0.5 단위")
     content = Column(Text, nullable=True)
+    keywords = Column(JSONB, nullable=True, default=list, comment="감상 키워드 태그 목록")
+    is_public = Column(Boolean, nullable=False, default=True, comment="True=공개, False=비공개")
+    likes_count = Column(Integer, nullable=False, default=0, comment="좋아요 총합 캐시")
+    dislikes_count = Column(Integer, nullable=False, default=0, comment="싫어요 총합 캐시")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # Relationships
@@ -174,11 +200,15 @@ class Comment(Base):
     parent_comment_id = Column(Integer, ForeignKey("comments.id", ondelete="CASCADE"), nullable=True, index=True)
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     content = Column(Text, nullable=False)
+    is_public = Column(Boolean, nullable=False, default=True, comment="True=공개, False=비공개")
+    likes_count = Column(Integer, nullable=False, default=0, comment="좋아요 총합 캐시")
+    dislikes_count = Column(Integer, nullable=False, default=0, comment="싫어요 총합 캐시")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # Relationships
     review = relationship("Review", back_populates="comments")
     user = relationship("User", back_populates="comments")
+    likes = relationship("CommentLike", back_populates="comment", cascade="all, delete-orphan")
     parent = relationship("Comment", remote_side=[id], backref="replies")
 
 
@@ -198,6 +228,24 @@ class ReviewLike(Base):
 
     __table_args__ = (
         UniqueConstraint('review_id', 'user_id', name='uq_review_user_like'),
+    )
+
+
+class CommentLike(Base):
+    """사용자 댓글 좋아요"""
+    __tablename__ = "comment_likes"
+
+    id = Column(Integer, primary_key=True)
+    comment_id = Column(Integer, ForeignKey("comments.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    is_like = Column(Boolean, nullable=False, default=True, comment="True=좋아요, False=싫어요")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    comment = relationship("Comment", back_populates="likes")
+    user = relationship("User", back_populates="comment_likes")
+
+    __table_args__ = (
+        UniqueConstraint("comment_id", "user_id", name="uq_comment_user_like"),
     )
 
 
@@ -260,6 +308,15 @@ class UserPreference(Base):
     boost_tags = Column(JSONB, nullable=False, default=list, comment="좋아하는 태그 리스트")
     dislike_tags = Column(JSONB, nullable=False, default=list, comment="제외/비선호 태그 리스트")
     penalty_tags = Column(JSONB, nullable=False, default=list, comment="싫어하는 태그 리스트")
+    
+    # Survey fields
+    favorite_genres = Column(JSONB, nullable=True, default=list, comment="좋아하는 장르 리스트")
+    disliked_genres = Column(JSONB, nullable=True, default=list, comment="싫어하는 장르 리스트")
+    viewing_context = Column(String, nullable=True, comment="영화 감상 맥락 (혼자/연인/가족/자기전/주말)")
+    preferred_vibe = Column(String, nullable=True, comment="선호 분위기 (가볍고 유쾌한/감동적/충격적 등)")
+    interest_keywords = Column(JSONB, nullable=True, default=list, comment="관심 키워드 리스트")
+    preferred_origin = Column(String, nullable=True, comment="선호 국적 (한국/미국/일본/유럽/고전)")
+    
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
 
@@ -320,3 +377,39 @@ class QuestionHistory(Base):
     answer = Column(Text, nullable=False)
 
     user = relationship("User", back_populates="history")
+
+
+class WatchedMovie(Base):
+    """User watched movies"""
+    __tablename__ = "watched_movies"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    movie_id = Column(Integer, ForeignKey("movies.id", ondelete="CASCADE"), nullable=False, index=True)
+    watched_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="watched_movies")
+    movie = relationship("Movie", back_populates="watched_by")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "movie_id", name="uq_user_movie_watched"),
+        Index("ix_watched_movies_user_movie", "user_id", "movie_id"),
+    )
+
+
+class RouletteReward(Base):
+    """Daily roulette rewards"""
+    __tablename__ = "roulette_rewards"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    item = Column(String, nullable=False)
+    popcorn_gain = Column(Integer, nullable=False, default=0)
+    exp_gain = Column(Integer, nullable=False, default=0)
+    rewarded_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="roulette_rewards")
+
+    __table_args__ = (
+        Index("ix_roulette_rewards_user_rewarded", "user_id", "rewarded_at"),
+    )

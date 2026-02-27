@@ -3,7 +3,7 @@ Movie repository with custom queries
 """
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import or_, and_, func
+from sqlalchemy import or_, and_, func, collate
 
 from models import Movie, MovieGenre, MovieTag, Review
 from repositories.base import BaseRepository
@@ -30,23 +30,23 @@ class MovieRepository(BaseRepository[Movie]):
         genres: Optional[List[str]] = None,
         category: Optional[str] = None,
         sort: str = "latest",
+        runtime_ranges: Optional[List[tuple[Optional[int], Optional[int]]]] = None,
+        year_ranges: Optional[List[tuple[Optional[int], Optional[int]]]] = None,
         skip: int = 0,
         limit: int = 20
-    ) -> List[Movie]:
+    ) -> List[tuple[Movie, int]]:
         """Search movies by title, genres, category with sorting"""
-        db_query = self.db.query(Movie).options(
+        db_query = self.db.query(
+            Movie,
+            func.count(func.distinct(Review.id)).label("reviews_count")
+        ).options(
             joinedload(Movie.genres),
             joinedload(Movie.tags)
-        )
+        ).outerjoin(Review)
         
         # Text search
         if query:
-            db_query = db_query.filter(
-                or_(
-                    Movie.title.ilike(f"%{query}%"),
-                    Movie.synopsis.ilike(f"%{query}%")
-                )
-            )
+            db_query = db_query.filter(Movie.title.ilike(f"%{query}%"))
         
         # Genre filter
         if genres:
@@ -59,24 +59,46 @@ class MovieRepository(BaseRepository[Movie]):
             db_query = db_query.join(MovieTag).filter(
                 MovieTag.tag.ilike(f"%{category}%")
             ).distinct()
+
+        # Runtime filter (OR across ranges)
+        if runtime_ranges:
+            runtime_conditions = []
+            for min_val, max_val in runtime_ranges:
+                conds = []
+                if min_val is not None:
+                    conds.append(Movie.runtime >= min_val)
+                if max_val is not None:
+                    conds.append(Movie.runtime <= max_val)
+                if conds:
+                    runtime_conditions.append(and_(*conds))
+            if runtime_conditions:
+                db_query = db_query.filter(or_(*runtime_conditions))
+
+        # Release year filter (OR across ranges)
+        if year_ranges:
+            year_conditions = []
+            for min_val, max_val in year_ranges:
+                conds = []
+                if min_val is not None:
+                    conds.append(func.extract("year", Movie.release) >= min_val)
+                if max_val is not None:
+                    conds.append(func.extract("year", Movie.release) <= max_val)
+                if conds:
+                    year_conditions.append(and_(*conds))
+            if year_conditions:
+                db_query = db_query.filter(or_(*year_conditions))
         
         # Sorting
+        db_query = db_query.group_by(Movie.id)
         if sort == "popular":
             # Sort by review count
-            from sqlalchemy import func
-            db_query = (
-                db_query.outerjoin(Review)
-                .group_by(Movie.id)
-                .order_by(func.count(Review.id).desc())
-            )
+            db_query = db_query.order_by(func.count(func.distinct(Review.id)).desc())
         elif sort == "rating":
             # Sort by average rating
-            from sqlalchemy import func
-            db_query = (
-                db_query.outerjoin(Review)
-                .group_by(Movie.id)
-                .order_by(func.coalesce(func.avg(Review.rating), 0).desc())
-            )
+            db_query = db_query.order_by(func.coalesce(func.avg(Review.rating), 0).desc())
+        elif sort == "title":
+            # Sort by title (Korean collation)
+            db_query = db_query.order_by(collate(Movie.title, "ko_KR.utf8").asc().nullslast())
         else:  # latest (default)
             db_query = db_query.order_by(Movie.release.desc().nullslast())
         
@@ -86,19 +108,16 @@ class MovieRepository(BaseRepository[Movie]):
         self,
         query: Optional[str] = None,
         genres: Optional[List[str]] = None,
-        category: Optional[str] = None
+        category: Optional[str] = None,
+        runtime_ranges: Optional[List[tuple[Optional[int], Optional[int]]]] = None,
+        year_ranges: Optional[List[tuple[Optional[int], Optional[int]]]] = None,
     ) -> int:
         """Count movies matching search criteria"""
         db_query = self.db.query(Movie)
         
         # Text search
         if query:
-            db_query = db_query.filter(
-                or_(
-                    Movie.title.ilike(f"%{query}%"),
-                    Movie.synopsis.ilike(f"%{query}%")
-                )
-            )
+            db_query = db_query.filter(Movie.title.ilike(f"%{query}%"))
         
         # Genre filter
         if genres:
@@ -111,6 +130,34 @@ class MovieRepository(BaseRepository[Movie]):
             db_query = db_query.join(MovieTag).filter(
                 MovieTag.tag.ilike(f"%{category}%")
             ).distinct()
+
+        # Runtime filter (OR across ranges)
+        if runtime_ranges:
+            runtime_conditions = []
+            for min_val, max_val in runtime_ranges:
+                conds = []
+                if min_val is not None:
+                    conds.append(Movie.runtime >= min_val)
+                if max_val is not None:
+                    conds.append(Movie.runtime <= max_val)
+                if conds:
+                    runtime_conditions.append(and_(*conds))
+            if runtime_conditions:
+                db_query = db_query.filter(or_(*runtime_conditions))
+
+        # Release year filter (OR across ranges)
+        if year_ranges:
+            year_conditions = []
+            for min_val, max_val in year_ranges:
+                conds = []
+                if min_val is not None:
+                    conds.append(func.extract("year", Movie.release) >= min_val)
+                if max_val is not None:
+                    conds.append(func.extract("year", Movie.release) <= max_val)
+                if conds:
+                    year_conditions.append(and_(*conds))
+            if year_conditions:
+                db_query = db_query.filter(or_(*year_conditions))
         
         return db_query.count()
     

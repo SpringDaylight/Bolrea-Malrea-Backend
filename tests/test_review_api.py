@@ -35,6 +35,7 @@ def test_review_api():
         review_id = review["id"]
         print(f"✓ Review created successfully (ID: {review_id})")
         print(f"  Rating: {review['rating']}")
+        print(f"  User Nickname: {review.get('user_nickname', 'N/A')}")
         print(f"  Content: {review['content'][:50]}...")
     else:
         print(f"✗ Failed to create review: {response.status_code}")
@@ -48,6 +49,7 @@ def test_review_api():
     if response.status_code == 200:
         review = response.json()
         print(f"✓ Review retrieved successfully")
+        print(f"  User Nickname: {review.get('user_nickname', 'N/A')}")
         print(f"  Likes: {review['likes_count']}")
         print(f"  Comments: {review['comments_count']}")
     else:
@@ -111,7 +113,8 @@ def test_review_api():
         comments = response.json()
         print(f"✓ Retrieved {len(comments)} comment(s)")
         for comment in comments:
-            print(f"  - {comment['content'][:50]}...")
+            nickname = comment.get('user_nickname', 'N/A')
+            print(f"  - [{nickname}] {comment['content'][:50]}...")
     else:
         print(f"✗ Failed to get comments: {response.status_code}")
     
@@ -123,7 +126,8 @@ def test_review_api():
         result = response.json()
         print(f"✓ Retrieved {result['total']} review(s)")
         for review in result['reviews']:
-            print(f"  - Rating: {review['rating']}, User: {review['user_id']}")
+            nickname = review.get('user_nickname', 'N/A')
+            print(f"  - [{nickname}] Rating: {review['rating']}, User: {review['user_id']}")
     else:
         print(f"✗ Failed to get movie reviews: {response.status_code}")
     
@@ -135,7 +139,8 @@ def test_review_api():
         result = response.json()
         print(f"✓ Retrieved {result['total']} review(s)")
         for review in result['reviews']:
-            print(f"  - Movie: {review['movie_id']}, Rating: {review['rating']}")
+            nickname = review.get('user_nickname', 'N/A')
+            print(f"  - [{nickname}] Movie: {review['movie_id']}, Rating: {review['rating']}")
     else:
         print(f"✗ Failed to get user reviews: {response.status_code}")
     

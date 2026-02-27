@@ -5,6 +5,7 @@
     "movie_id": { "type": ["string", "number"] },
     "title": { "type": "string" },
     "overview": { "type": "string" },
+    "synopsis": { "type": "string" },
     "keywords": {
       "type": "array",
       "items": { "type": "string" }
@@ -20,7 +21,8 @@
     "cast": {
       "type": "array",
       "items": { "type": "string" }
-    }
+    },
+    "save_to_db": { "type": "boolean" }
   },
   "additionalProperties": false
 }

@@ -77,6 +77,41 @@ def movie_vector_endpoint(body: dict) -> dict:
 @app.post("/predict/satisfaction")
 def predict_satisfaction_endpoint(body: dict) -> dict:
     try:
+<<<<<<< Updated upstream
+=======
+        from db import SessionLocal
+        from models import UserPreference
+        
+        # user_id가 있으면 DB에서 조회
+        user_id = body.get("user_id")
+        if user_id:
+            db = SessionLocal()
+            try:
+                user_pref = db.query(UserPreference).filter(
+                    UserPreference.user_id == user_id
+                ).first()
+                
+                if not user_pref or not user_pref.preference_vector_json:
+                    raise HTTPException(status_code=404, detail="사용자 선호도를 찾을 수 없습니다")
+                
+                # preference_vector_json에서 global 프로필 추출
+                pref_json = user_pref.preference_vector_json
+                if 'global' in pref_json:
+                    # 신 형식: global 키가 있는 경우
+                    user_profile = pref_json['global']
+                else:
+                    # 구 형식: 최상위에 직접 있는 경우
+                    user_profile = pref_json
+                
+                # DB에서 가져온 프로필로 교체
+                body["user_profile"] = user_profile
+                body["dislike_tags"] = user_pref.dislikes or []
+                body["boost_tags"] = user_pref.boost_tags or []
+            finally:
+                db.close()
+        
+        # 기존 로직 실행
+>>>>>>> Stashed changes
         body = validate_request("a3_predict_request.json", body)
         return predict_satisfaction(body)
     except Exception as exc:

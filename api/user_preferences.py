@@ -105,21 +105,42 @@ def save_user_preference(
     """
     Save or update user preference (upsert)
     
+    설문 데이터를 저장합니다. baseline만 업데이트하고 review 데이터는 보존됩니다.
+    
     If preference exists for the user, it will be updated.
     Otherwise, a new preference will be created.
     
     Request body should include:
     - user_id: User identifier
-    - preference_vector_json: Complete preference vector
+    - preference_vector_json: Complete preference vector (설문 결과)
     - boost_tags: List of liked tags (optional)
     - dislike_tags: List of disliked tags (optional)
     - penalty_tags: List of penalty tags (optional)
     """
+    from utils.preference_helper import update_baseline
+    
     repo = UserPreferenceRepository(db)
+    
+    # 기존 데이터 조회
+    existing = repo.get_by_user_id(request.user_id)
+    
+    # baseline만 업데이트 (review 보존)
+    if existing and existing.preference_vector_json:
+        # 기존 데이터가 있으면 baseline만 업데이트
+        updated_preference_json = update_baseline(
+            existing.preference_vector_json,
+            request.preference_vector_json
+        )
+    else:
+        # 신규 사용자면 새 구조로 생성
+        updated_preference_json = update_baseline(
+            None,
+            request.preference_vector_json
+        )
     
     preference = repo.upsert(
         user_id=request.user_id,
-        preference_vector_json=request.preference_vector_json,
+        preference_vector_json=updated_preference_json,
         persona_code=request.persona_code,
         boost_tags=request.boost_tags,
         dislike_tags=request.dislike_tags,

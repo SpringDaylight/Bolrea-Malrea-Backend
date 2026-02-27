@@ -82,6 +82,15 @@ async def get_personalized_recommendations(
         
         print(f"✅ 사용자 선호도 로드 완료")
         
+        # preference_vector_json에서 global 프로필 추출
+        pref_json = user_pref.preference_vector_json
+        if 'global' in pref_json:
+            # 신 형식: global 키가 있는 경우
+            user_profile = pref_json['global']
+        else:
+            # 구 형식: 최상위에 직접 있는 경우
+            user_profile = pref_json
+        
         # 2. watched 영화 ID 가져오기
         watched_repo = WatchedMovieRepository(db)
         exclude_movie_ids = watched_repo.get_watched_movie_ids(user_id)
@@ -121,7 +130,7 @@ async def get_personalized_recommendations(
             
             # 만족도 계산
             result = calculate_satisfaction_probability_improved(
-                user_profile=user_pref.preference_vector_json,
+                user_profile=user_profile,
                 movie_profile=movie_profile,
                 dislikes=user_pref.dislike_tags or [],
                 boost_tags=user_pref.boost_tags or [],

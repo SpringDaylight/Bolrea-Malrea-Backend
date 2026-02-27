@@ -268,7 +268,15 @@ async def calculate_satisfaction(
                     raise HTTPException(status_code=404, detail="사용자 선호도를 찾을 수 없습니다")
                 
                 print(f"✅ [Satisfaction] UserPreference 찾음")
-                user_profile = user_pref.preference_vector_json
+                
+                # preference_vector_json에서 global 프로필 추출
+                pref_json = user_pref.preference_vector_json
+                if 'global' in pref_json:
+                    # 신 형식: global 키가 있는 경우
+                    user_profile = pref_json['global']
+                else:
+                    # 구 형식: 최상위에 직접 있는 경우
+                    user_profile = pref_json
                 
                 # 영화 프로필 구성
                 movie_profile = {

@@ -217,12 +217,20 @@ async def recommend_group_v2(request: GroupRecommendRequest):
                     
                     if db_pref and db_pref.preference_vector_json:
                         pref_json = db_pref.preference_vector_json
-                        # preference_vector_json에서 프로필 추출
-                        if isinstance(pref_json, dict):
+                        
+                        # preference_vector_json에서 global 프로필 추출
+                        if 'global' in pref_json:
+                            # 신 형식: global 키가 있는 경우
+                            user_profile = pref_json['global']
+                        else:
+                            # 구 형식: 최상위에 직접 있는 경우
+                            user_profile = pref_json
+                        
+                        if isinstance(user_profile, dict):
                             # 중요: DB의 프로필을 그대로 사용 (이미 올바른 20-key 형식)
-                            user_dict["profile"] = pref_json
+                            user_dict["profile"] = user_profile
                             print(f"     {user.name}: DB에서 취향 로드 완료")
-                            print(f"       emotion keys: {len(pref_json.get('emotion_scores', {}))}, narrative keys: {len(pref_json.get('narrative_traits', {}))}")
+                            print(f"       emotion keys: {len(user_profile.get('emotion_scores', {}))}, narrative keys: {len(user_profile.get('narrative_traits', {}))}")
                             # boost_tags와 penalty_tags도 DB에서 가져오기 (요청에 없는 경우)
                             if not user.likes and db_pref.boost_tags:
                                 user_dict["likes"] = db_pref.boost_tags

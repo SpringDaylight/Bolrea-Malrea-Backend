@@ -151,6 +151,16 @@ class PreferenceUpdater:
         """사용자 취향 벡터 업데이트"""
         current_pref = user_pref.preference_vector_json
         
+        # preference_vector_json에서 global 프로필 추출
+        if 'global' in current_pref:
+            # 신 형식: global 키가 있는 경우
+            current_global = current_pref['global']
+            has_new_format = True
+        else:
+            # 구 형식: 최상위에 직접 있는 경우
+            current_global = current_pref
+            has_new_format = False
+        
         # 리뷰 텍스트 분석이 있으면 우선 사용, 없으면 영화 벡터 사용
         source_vector = review_vector if review_vector else {
             "emotion_scores": movie_vector.emotion_scores,
@@ -158,38 +168,45 @@ class PreferenceUpdater:
             "ending_preference": movie_vector.ending_preference
         }
         
-        updated_pref = {
+        updated_global = {
             "emotion_scores": self._update_vector(
-                current_pref.get("emotion_scores", {}),
+                current_global.get("emotion_scores", {}),
                 source_vector.get("emotion_scores", {}),
                 rating_weight,
                 learning_rate
             ),
             "narrative_traits": self._update_vector(
-                current_pref.get("narrative_traits", {}),
+                current_global.get("narrative_traits", {}),
                 source_vector.get("narrative_traits", {}),
                 rating_weight,
                 learning_rate
             ),
             "direction_mood": self._update_vector(
-                current_pref.get("direction_mood", {}),
+                current_global.get("direction_mood", {}),
                 movie_vector.direction_mood,
                 rating_weight,
                 learning_rate * 0.7  # 연출/분위기는 덜 반영
             ),
             "character_relationship": self._update_vector(
-                current_pref.get("character_relationship", {}),
+                current_global.get("character_relationship", {}),
                 movie_vector.character_relationship,
                 rating_weight,
                 learning_rate * 0.7
             ),
             "ending_preference": self._update_vector(
-                current_pref.get("ending_preference", {}),
+                current_global.get("ending_preference", {}),
                 source_vector.get("ending_preference", {}),
                 rating_weight,
                 learning_rate
             )
         }
+        
+        # 신 형식인 경우 구조 유지, 구 형식인 경우 그대로 저장
+        if has_new_format:
+            updated_pref = current_pref.copy()
+            updated_pref['global'] = updated_global
+        else:
+            updated_pref = updated_global
         
         # boost_tags와 dislike_tags 업데이트
         boost_tags = list(user_pref.boost_tags) if user_pref.boost_tags else []

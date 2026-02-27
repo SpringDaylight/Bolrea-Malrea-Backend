@@ -262,6 +262,13 @@ def get_user_wordcloud(
 
     boost_tags: list = preference.boost_tags or []
     pref_vector = preference.preference_vector_json or {}
+    
+    # preference_vector_json에서 global 프로필 추출
+    if 'global' in pref_vector:
+        # 신 형식: global 키가 있는 경우
+        pref_vector = pref_vector['global']
+    # 구 형식은 그대로 사용
+    
     # emotion_scores: {"감동적이에요": 0.85, ...}
     emotion_scores: dict = pref_vector.get("emotion_scores", {})
 

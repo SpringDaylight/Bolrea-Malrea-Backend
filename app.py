@@ -331,8 +331,17 @@ def predict_satisfaction_endpoint(body: dict) -> dict:
                 if not user_pref or not user_pref.preference_vector_json:
                     raise HTTPException(status_code=404, detail="사용자 선호도를 찾을 수 없습니다")
                 
+                # preference_vector_json에서 global 프로필 추출
+                pref_json = user_pref.preference_vector_json
+                if 'global' in pref_json:
+                    # 신 형식: global 키가 있는 경우
+                    user_profile = pref_json['global']
+                else:
+                    # 구 형식: 최상위에 직접 있는 경우
+                    user_profile = pref_json
+                
                 # DB에서 가져온 프로필로 교체
-                body["user_profile"] = user_pref.preference_vector_json
+                body["user_profile"] = user_profile
                 body["dislike_tags"] = user_pref.dislikes or []
                 body["boost_tags"] = user_pref.boost_tags or []
             finally:

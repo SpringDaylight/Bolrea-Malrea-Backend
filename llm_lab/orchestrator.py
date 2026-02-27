@@ -668,7 +668,14 @@ JSON만 출력하세요:"""
                 print(f"⚠️ [Satisfaction Batch] 사용자 선호도 없음: user_id={user_id}")
                 return {}
             
-            user_profile = user_pref.preference_vector_json
+            # preference_vector_json에서 global 프로필 추출
+            pref_json = user_pref.preference_vector_json
+            if 'global' in pref_json:
+                # 신 형식: global 키가 있는 경우
+                user_profile = pref_json['global']
+            else:
+                # 구 형식: 최상위에 직접 있는 경우
+                user_profile = pref_json
             
             # 각 영화에 대해 만족도 계산
             for movie_id in movie_ids:

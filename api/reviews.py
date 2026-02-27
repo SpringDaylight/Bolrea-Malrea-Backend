@@ -104,9 +104,8 @@ def create_review(
                 "dislikes": ""
             })
             
-            # UserPreference 테이블에 저장
-            pref_repo = UserPreferenceRepository(db)
-            preference_vector_json = {
+            # 분석 결과를 5개 카테고리로 구성
+            analyzed_preference = {
                 "emotion_scores": user_profile["emotion_scores"],
                 "narrative_traits": user_profile["narrative_traits"],
                 "direction_mood": user_profile["direction_mood"],
@@ -114,9 +113,33 @@ def create_review(
                 "ending_preference": user_profile["ending_preference"]
             }
             
+            # 영화 장르 가져오기 (첫 번째 장르 사용)
+            from repositories.movie import MovieRepository
+            movie = MovieRepository(db).get_with_details(db_review.movie_id)
+            genre = movie.genres[0].genre if movie and movie.genres else None
+            
+            # review 데이터 업데이트 (baseline 보존)
+            from utils.preference_helper import update_review_from_analysis
+            pref_repo = UserPreferenceRepository(db)
+            existing_pref = pref_repo.get_by_user_id(user_id)
+            
+            if existing_pref:
+                updated_preference_json = update_review_from_analysis(
+                    existing_pref.preference_vector_json,
+                    analyzed_preference,
+                    genre=genre
+                )
+            else:
+                # 신규 사용자 (설문 안함)
+                updated_preference_json = update_review_from_analysis(
+                    None,
+                    analyzed_preference,
+                    genre=genre
+                )
+            
             pref_repo.upsert(
                 user_id=user_id,
-                preference_vector_json=preference_vector_json,
+                preference_vector_json=updated_preference_json,
                 boost_tags=user_profile.get("boost_tags", []),
                 dislike_tags=user_profile.get("dislike_tags", []),
                 penalty_tags=[]
@@ -124,6 +147,8 @@ def create_review(
     except Exception as e:
         # 선호도 업데이트 실패는 치명적이지 않으므로 로그만 남김
         print(f"Failed to update user preference: {e}")
+        import traceback
+        traceback.print_exc()
     
     # Refresh to get user relationship
     db.refresh(db_review)
@@ -188,8 +213,8 @@ def update_review(
                 "dislikes": ""
             })
             
-            pref_repo = UserPreferenceRepository(db)
-            preference_vector_json = {
+            # 분석 결과를 5개 카테고리로 구성
+            analyzed_preference = {
                 "emotion_scores": user_profile["emotion_scores"],
                 "narrative_traits": user_profile["narrative_traits"],
                 "direction_mood": user_profile["direction_mood"],
@@ -197,15 +222,40 @@ def update_review(
                 "ending_preference": user_profile["ending_preference"]
             }
             
+            # 영화 장르 가져오기 (첫 번째 장르 사용)
+            movie = MovieRepository(db).get_with_details(db_review.movie_id)
+            genre = movie.genres[0].genre if movie and movie.genres else None
+            
+            # review 데이터 업데이트 (baseline 보존)
+            from utils.preference_helper import update_review_from_analysis
+            pref_repo = UserPreferenceRepository(db)
+            existing_pref = pref_repo.get_by_user_id(user_id)
+            
+            if existing_pref:
+                updated_preference_json = update_review_from_analysis(
+                    existing_pref.preference_vector_json,
+                    analyzed_preference,
+                    genre=genre
+                )
+            else:
+                # 신규 사용자 (설문 안함)
+                updated_preference_json = update_review_from_analysis(
+                    None,
+                    analyzed_preference,
+                    genre=genre
+                )
+            
             pref_repo.upsert(
                 user_id=user_id,
-                preference_vector_json=preference_vector_json,
+                preference_vector_json=updated_preference_json,
                 boost_tags=user_profile.get("boost_tags", []),
                 dislike_tags=user_profile.get("dislike_tags", []),
                 penalty_tags=[]
             )
     except Exception as e:
         print(f"Failed to update user preference: {e}")
+        import traceback
+        traceback.print_exc()
     
     result = repo.get_with_counts(review_id)
     

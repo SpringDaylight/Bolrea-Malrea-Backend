@@ -57,6 +57,9 @@ class LLMOrchestrator:
         # Step 1: Planner LLM - 요청 분석
         query_plan = self._plan_query(user_input)
         
+        # 장르 추출 (사용자 선호도 조회용)
+        extracted_genre = self._extract_genre_for_preference(query_plan)
+        
         # 사용자가 본 영화 ID 가져오기
         exclude_movie_ids = []
         if user_id:
@@ -65,6 +68,12 @@ class LLMOrchestrator:
             exclude_movie_ids = watched_repo.get_watched_movie_ids(user_id)
             if exclude_movie_ids:
                 print(f"✅ [Orchestrator] 사용자가 본 영화 {len(exclude_movie_ids)}개 제외")
+            
+            # 장르별 선호도 사용 여부 출력
+            if extracted_genre:
+                print(f"✅ [Orchestrator] 장르 추출: '{extracted_genre}' - 장르별 선호도 사용")
+            else:
+                print(f"✅ [Orchestrator] 장르 명시 없음 - global 선호도 사용")
         
         # Step 2: Multi-source Retrieval (가중치 결정 포함)
         candidates, keyword_weight, emotion_weight, keyword_results, vector_results = self._retrieve_candidates_with_weights(
@@ -100,7 +109,8 @@ class LLMOrchestrator:
         validated_results = self._validate_recommendations(
             ranked_results=ranked_results,
             candidate_pool=candidates,
-            user_id=user_id
+            user_id=user_id,
+            genre=extracted_genre  # 장르 전달
         )
         
         # 선택된 영화 ID 집합
@@ -198,14 +208,94 @@ JSON만 출력하세요:"""
         # 간단한 키워드 추출
         keywords = self.db_connector._extract_keywords(user_input)
         
+        # 장르 키워드 매핑 (한국어)
+        genre_keywords = {
+            "액션": ["액션"],
+            "드라마": ["드라마"],
+            "코미디": ["코미디", "웃긴", "재밌는", "유쾌"],
+            "로맨스": ["로맨스", "멜로", "사랑"],
+            "스릴러": ["스릴러", "긴장", "서스펜스"],
+            "공포": ["공포", "무서운", "호러"],
+            "SF": ["SF", "공상과학", "미래"],
+            "판타지": ["판타지", "마법"],
+            "애니메이션": ["애니메이션", "애니", "만화"],
+            "다큐멘터리": ["다큐멘터리", "다큐"],
+            "범죄": ["범죄", "느와르"],
+            "미스터리": ["미스터리", "추리"],
+            "모험": ["모험"],
+            "가족": ["가족"],
+            "전쟁": ["전쟁"],
+            "서부": ["서부", "웨스턴"],
+            "뮤지컬": ["뮤지컬", "음악"],
+            "역사": ["역사"]
+        }
+        
+        # 사용자 입력에서 장르 추출
+        detected_genres = []
+        user_input_lower = user_input.lower()
+        
+        for genre, genre_keywords_list in genre_keywords.items():
+            for keyword in genre_keywords_list:
+                if keyword in user_input_lower:
+                    detected_genres.append(genre)
+                    break
+        
+        # 중복 제거
+        detected_genres = list(set(detected_genres))
+        
+        if detected_genres:
+            print(f"   ✅ 폴백: 장르 추출 성공 - {detected_genres}")
+        
         return {
             "keywords": keywords,
             "mood": [],
-            "genres": [],
+            "genres": detected_genres,  # 추출된 장르 포함
             "exclude": [],
             "time_context": "",
             "attention_level": "medium"
         }
+    
+    def _extract_genre_for_preference(self, query_plan: Dict) -> Optional[str]:
+        """
+        쿼리 플랜에서 장르를 추출하여 선호도 조회에 사용
+        
+        Args:
+            query_plan: 구조화된 쿼리
+            
+        Returns:
+            추출된 장르 (첫 번째 장르만 반환, 없으면 None)
+        """
+        genres = query_plan.get("genres", [])
+        
+        if not genres:
+            return None
+        
+        # 첫 번째 장르만 사용
+        genre = genres[0]
+        
+        # 장르 정규화 (DB에 저장된 형식과 일치시키기)
+        genre_mapping = {
+            "액션": "액션",
+            "드라마": "드라마",
+            "코미디": "코미디",
+            "로맨스": "로맨스",
+            "스릴러": "스릴러",
+            "공포": "공포",
+            "SF": "SF",
+            "판타지": "판타지",
+            "애니메이션": "애니메이션",
+            "다큐멘터리": "다큐멘터리",
+            "범죄": "범죄",
+            "미스터리": "미스터리",
+            "모험": "모험",
+            "가족": "가족",
+            "전쟁": "전쟁",
+            "서부": "서부",
+            "뮤지컬": "뮤지컬",
+            "역사": "역사"
+        }
+        
+        return genre_mapping.get(genre, genre)
     
     def _retrieve_candidates(
         self,
@@ -572,7 +662,8 @@ JSON만 출력하세요:"""
         self,
         ranked_results: Dict,
         candidate_pool: List[Dict],
-        user_id: Optional[int] = None
+        user_id: Optional[int] = None,
+        genre: Optional[str] = None
     ) -> Dict:
         """
         Step 4: ID Validation - 할루시네이션 방지 + 만족도 계산
@@ -581,6 +672,7 @@ JSON만 출력하세요:"""
             ranked_results: LLM 랭킹 결과
             candidate_pool: 원본 후보 풀
             user_id: 사용자 ID (만족도 계산용, 선택사항)
+            genre: 추출된 장르 (선호도 조회용, 선택사항)
             
         Returns:
             검증된 추천 결과 (만족도 포함)
@@ -600,10 +692,10 @@ JSON만 출력하세요:"""
         # 검증된 영화 정보 조회
         id_to_movie = {m['movie_id']: m for m in candidate_pool}
         
-        # 만족도 계산 (로그인한 경우만)
+        # 만족도 계산 (로그인한 경우만, 장르 전달)
         satisfaction_scores = {}
         if user_id:
-            satisfaction_scores = self._calculate_satisfaction_batch(user_id, validated_ids)
+            satisfaction_scores = self._calculate_satisfaction_batch(user_id, validated_ids, genre=genre)
         
         recommendations = []
         for movie_id in validated_ids:
@@ -639,13 +731,14 @@ JSON만 출력하세요:"""
             "validated": True
         }
     
-    def _calculate_satisfaction_batch(self, user_id: int, movie_ids: List[int]) -> Dict[int, float]:
+    def _calculate_satisfaction_batch(self, user_id: int, movie_ids: List[int], genre: Optional[str] = None) -> Dict[int, float]:
         """
         여러 영화에 대한 만족도를 일괄 계산
         
         Args:
             user_id: 사용자 ID
             movie_ids: 영화 ID 리스트
+            genre: 추출된 장르 (선호도 조회용, 선택사항)
             
         Returns:
             {movie_id: satisfaction_probability} 딕셔너리
@@ -654,6 +747,7 @@ JSON만 출력하세요:"""
         from models import UserPreference, MovieVector
         from ml.model_sample.analysis.cal_sim import calculate_satisfaction_probability_improved
         from utils.cache import cache_get, cache_set
+        from utils.preference_helper import get_preference_for_recommendation
         
         db = SessionLocal()
         satisfaction_scores = {}
@@ -668,19 +762,26 @@ JSON만 출력하세요:"""
                 print(f"⚠️ [Satisfaction Batch] 사용자 선호도 없음: user_id={user_id}")
                 return {}
             
-            # preference_vector_json에서 global 프로필 추출
-            pref_json = user_pref.preference_vector_json
-            if 'global' in pref_json:
-                # 신 형식: global 키가 있는 경우
-                user_profile = pref_json['global']
+            # 장르별 선호도 가져오기 (genre 파라미터 사용)
+            user_profile = get_preference_for_recommendation(
+                user_pref.preference_vector_json,
+                genre=genre
+            )
+            
+            if not user_profile:
+                print(f"⚠️ [Satisfaction Batch] 선호도 프로필 없음: user_id={user_id}, genre={genre}")
+                return {}
+            
+            # 장르 사용 여부 로그
+            if genre:
+                print(f"✅ [Satisfaction Batch] 장르별 선호도 사용: genre={genre}")
             else:
-                # 구 형식: 최상위에 직접 있는 경우
-                user_profile = pref_json
+                print(f"✅ [Satisfaction Batch] global 선호도 사용")
             
             # 각 영화에 대해 만족도 계산
             for movie_id in movie_ids:
-                # 캐시 확인
-                cache_key = f"satisfaction:{user_id}:{movie_id}"
+                # 캐시 키에 장르 포함
+                cache_key = f"satisfaction:{user_id}:{movie_id}:{genre or 'global'}"
                 cached_result = cache_get(cache_key)
                 
                 if cached_result:
@@ -721,7 +822,8 @@ JSON만 출력하세요:"""
                     "satisfaction_probability": result['probability'],
                     "confidence": result['confidence'],
                     "breakdown": result['breakdown'],
-                    "user_id": user_id
+                    "user_id": user_id,
+                    "genre": genre
                 }
                 cache_set(cache_key, cache_result, ttl=3600)
             

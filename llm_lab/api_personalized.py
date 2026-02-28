@@ -87,7 +87,7 @@ async def get_personalized_recommendations(
         from utils.preference_helper import get_preference_for_recommendation
         
         user_profile = get_preference_for_recommendation(
-            pref_json,
+            user_pref.preference_vector_json,
             genre=None  # 개인 맞춤 추천은 항상 global 사용
         )
         

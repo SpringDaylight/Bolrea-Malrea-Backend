@@ -320,14 +320,13 @@ def _build_explanation_prompt(
     
     # 30% 이하는 불일치 중심, 그 외는 일치 중심
     if prob <= 30:
-        prompt = f"""다음 정보를 바탕으로 왜 이 영화가 사용자의 취향과 맞지 않는지 2-3줄로 친근하게 설명해주세요.
+        prompt = f"""다음 정보를 바탕으로 왜 이 영화가 사용자의 취향과 맞지 않는지 3-4줄로 친근하게 설명해주세요.
 
 영화: "{movie_title}"
 
 주요 불일치 요소: {", ".join(top_factors)}
 - 감정 유사사: {emotion_sim:.0f}%
 - 서사 유사사: {narrative_sim:.0f}%
-- 결말 유사사: {ending_sim:.0f}%
 
 {liked_str}
 {disliked_str}
@@ -341,14 +340,14 @@ def _build_explanation_prompt(
 3. 아래 '핵심 설명 소재' 2개를 모두 구체적으로 언급하세요
 4. '정서적 측면/서사적 측면' 같은 모호한 표현만 쓰지 마세요
 5. 태그 원문을 그대로 인용하지 말고 자연어로 풀어 쓰세요
-6. 2-3줄로 간결하게
+6. 3-4줄로 간결하게
 
 핵심 설명 소재:
 {factor_hint_text}
 
 설명만 출력하고 다른 텍스트는 포함하지 마세요"""
     else:
-        prompt = f"""다음 정보를 바탕으로 왜 이 영화가 사용자 취향에 맞는지 2-3줄로 친근하게 설명해주세요.
+        prompt = f"""다음 정보를 바탕으로 왜 이 영화가 사용자 취향에 맞는지 3-4줄로 친근하게 설명해주세요.
 
 영화: "{movie_title}"
 만족 확률(참고용): {prob:.0f}%
@@ -356,7 +355,6 @@ def _build_explanation_prompt(
 주요 일치 요소: {", ".join(top_factors)}
 - 감정 유사사: {emotion_sim:.0f}%
 - 서사 유사사: {narrative_sim:.0f}%
-- 결말 유사사: {ending_sim:.0f}%
 
 {liked_str}
 {disliked_str}
@@ -370,7 +368,7 @@ def _build_explanation_prompt(
 3. 아래 '핵심 설명 소재' 2개를 모두 구체적으로 언급하세요
 4. '정서적 측면/서사적 측면' 같은 모호한 표현만 쓰지 마세요
 5. 태그 원문을 그대로 인용하지 말고 자연어로 풀어 쓰세요
-6. 2-3줄로 간결하게
+6. 3-4줄로 간결하게
 
 핵심 설명 소재:
 {factor_hint_text}

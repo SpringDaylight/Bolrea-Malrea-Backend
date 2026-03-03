@@ -76,7 +76,6 @@ def explain_prediction(payload: dict) -> dict:
             "movie_title": str,
             "match_rate": float,
             "explanation": str,
-            "key_factors": List[Dict],
             "disclaimer": str
         }
     """
@@ -191,27 +190,15 @@ def explain_prediction(payload: dict) -> dict:
         )
     
     # 주요 요소 추출 (차원별 일치율 - 내부 계산용, 프론트엔드에서는 표시 안 함)
-    key_factors = []
     if breakdown:
         emotion_sim   = breakdown.get("emotion_similarity", 0)
         narrative_sim = breakdown.get("narrative_similarity", 0)
         direction_sim = breakdown.get("direction_mood_similarity", breakdown.get("ending_similarity", 0))
-        
-        # 퍼센트로 변환 (0-1 범위를 0-100으로)
-        key_factors = [
-            {"category": "emotion",        "label": "정서 톤",    "score": round(emotion_sim * 100, 1), "display": False},
-            {"category": "narrative",      "label": "서사 초점",  "score": round(narrative_sim * 100, 1), "display": False},
-            {"category": "direction_mood", "label": "연출 분위기", "score": round(direction_sim * 100, 1), "display": False},
-        ]
-        
-        # 점수 높은 순으로 정렬
-        key_factors.sort(key=lambda x: x["score"], reverse=True)
     
     result = {
         "movie_title": movie_title,
         "match_rate": round(probability * 100, 1),
         "explanation": explanation,
-        "key_factors": key_factors,
         "disclaimer": "추천은 정서·서사 태그 분석 기반이며 개인차가 있을 수 있습니다."
     }
     

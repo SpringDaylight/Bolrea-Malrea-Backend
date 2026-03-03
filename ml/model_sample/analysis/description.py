@@ -318,27 +318,35 @@ def _build_explanation_prompt(
         factor_hint_lines.append(f"- {factor}: {hint}")
     factor_hint_text = "\n".join(factor_hint_lines) if factor_hint_lines else "- 정서 톤: 감정선이 또렷한 분위기\n- 서사 초점: 전개가 분명한 이야기 흐름"
     
+    # 사용자 취향 요약 생성
+    user_preference_summary = ""
+    if user_liked_tags and len(user_liked_tags) > 0:
+        # 태그를 자연어로 변환
+        preference_phrases = []
+        for tag in user_liked_tags[:3]:
+            naturalized = _naturalize_tag(tag, "")
+            preference_phrases.append(naturalized)
+        user_preference_summary = f"당신은 {' 그리고 '.join(preference_phrases)}를 선호하는 편이라"
+    
     # 30% 이하는 불일치 중심, 그 외는 일치 중심
     if prob <= 30:
-        prompt = f"""다음 정보를 바탕으로 왜 이 영화가 사용자의 취향과 맞지 않는지 3-4줄로 친근하게 설명해주세요.
+        prompt = f"""다음 정보를 바탕으로 왜 이 영화가 사용자의 취향과 맞지 않는지 설명해주세요.
 
 영화: "{movie_title}"
+사용자 취향: {user_preference_summary if user_preference_summary else "다양한 취향"}
 
 주요 불일치 요소: {", ".join(top_factors)}
-- 감정 유사사: {emotion_sim:.0f}%
-- 서사 유사사: {narrative_sim:.0f}%
+- 감정 유사도: {emotion_sim:.0f}%
+- 서사 유사도: {narrative_sim:.0f}%
 
 {liked_str}
 {disliked_str}
 
-좋아하는 것 보너스: {boost_score:.1f}
-싫어하는 것 페널티: {dislike_penalty:.1f}
-
 요구사항:
-1. 첫 문장은 확률/부합도 소개 문장으로 쓰지 마세요
+1. 사용자의 취향을 먼저 언급한 후 영화와의 관계를 설명하세요
 2. 퍼센트(%) 및 숫자 수치를 설명에 쓰지 마세요
 3. 아래 '핵심 설명 소재' 2개를 모두 구체적으로 언급하세요
-4. '정서적 측면/서사적 측면' 같은 모호한 표현만 쓰지 마세요
+4. '정서적 측면/서사적 측면' 같은 모호한 표현을 쓰지 마세요
 5. 태그 원문을 그대로 인용하지 말고 자연어로 풀어 쓰세요
 6. 3-4줄로 간결하게
 
@@ -347,26 +355,23 @@ def _build_explanation_prompt(
 
 설명만 출력하고 다른 텍스트는 포함하지 마세요"""
     else:
-        prompt = f"""다음 정보를 바탕으로 왜 이 영화가 사용자 취향에 맞는지 3-4줄로 친근하게 설명해주세요.
+        prompt = f"""다음 정보를 바탕으로 왜 이 영화가 사용자 취향에 맞는지 설명해주세요.
 
 영화: "{movie_title}"
-만족 확률(참고용): {prob:.0f}%
+사용자 취향: {user_preference_summary if user_preference_summary else "다양한 취향"}
 
 주요 일치 요소: {", ".join(top_factors)}
-- 감정 유사사: {emotion_sim:.0f}%
-- 서사 유사사: {narrative_sim:.0f}%
+- 감정 유사도: {emotion_sim:.0f}%
+- 서사 유사도: {narrative_sim:.0f}%
 
 {liked_str}
 {disliked_str}
 
-좋아하는 것 보너스: {boost_score:.1f}
-싫어하는 것 페널티: {dislike_penalty:.1f}
-
 요구사항:
-1. 첫 문장은 확률/부합도 소개 문장으로 쓰지 마세요
+1. 사용자의 취향을 먼저 언급한 후 영화와의 관계를 설명하세요
 2. 퍼센트(%) 및 숫자 수치를 설명에 쓰지 마세요
 3. 아래 '핵심 설명 소재' 2개를 모두 구체적으로 언급하세요
-4. '정서적 측면/서사적 측면' 같은 모호한 표현만 쓰지 마세요
+4. '정서적 측면/서사적 측면' 같은 모호한 표현을 쓰지 마세요
 5. 태그 원문을 그대로 인용하지 말고 자연어로 풀어 쓰세요
 6. 3-4줄로 간결하게
 

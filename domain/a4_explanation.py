@@ -199,6 +199,7 @@ def explain_prediction(payload: dict) -> dict:
         "movie_title": movie_title,
         "match_rate": round(probability * 100, 1),
         "explanation": explanation,
+        "key_factors": [],
         "disclaimer": "추천은 정서·서사 태그 분석 기반이며 개인차가 있을 수 있습니다."
     }
     

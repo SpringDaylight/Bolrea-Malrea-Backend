@@ -84,7 +84,8 @@ def create_review(
     if not watched_repo.get(user_id, db_review.movie_id):
         watched_repo.create(user_id, db_review.movie_id)
     
-    # 사용자 선호도 업데이트 (리뷰 기반)
+    # 사용자 선호도 업데이트 (리뷰 기반) - 비동기 처리로 변경하여 리뷰 저장 실패 방지
+    # 선호도 분석 실패는 로그만 남기고 리뷰 저장은 계속 진행
     try:
         # 사용자의 모든 리뷰 가져오기
         user_reviews = repo.get_by_user(user_id, skip=0, limit=100)
@@ -98,57 +99,59 @@ def create_review(
         if review_texts:
             combined_text = " ".join(review_texts[-10:])  # 최근 10개 리뷰만 사용
             
-            # A-1 API로 선호도 분석
-            user_profile = analyze_preference({
-                "text": combined_text,
-                "dislikes": ""
-            })
-            
-            # 분석 결과를 5개 카테고리로 구성
-            analyzed_preference = {
-                "emotion_scores": user_profile["emotion_scores"],
-                "narrative_traits": user_profile["narrative_traits"],
-                "direction_mood": user_profile["direction_mood"],
-                "character_relationship": user_profile["character_relationship"],
-                "ending_preference": user_profile["ending_preference"]
-            }
-            
-            # 영화 장르 가져오기 (첫 번째 장르 사용)
-            from repositories.movie import MovieRepository
-            movie = MovieRepository(db).get_with_details(db_review.movie_id)
-            genre = movie.genres[0].genre if movie and movie.genres else None
-            
-            # review 데이터 업데이트 (baseline 보존)
-            from utils.preference_helper import update_review_from_analysis
-            pref_repo = UserPreferenceRepository(db)
-            existing_pref = pref_repo.get_by_user_id(user_id)
-            
-            if existing_pref:
-                updated_preference_json = update_review_from_analysis(
-                    existing_pref.preference_vector_json,
-                    analyzed_preference,
-                    genre=genre
+            try:
+                # A-1 API로 선호도 분석
+                user_profile = analyze_preference({
+                    "text": combined_text,
+                    "dislikes": ""
+                })
+                
+                # 분석 결과를 5개 카테고리로 구성
+                analyzed_preference = {
+                    "emotion_scores": user_profile["emotion_scores"],
+                    "narrative_traits": user_profile["narrative_traits"],
+                    "direction_mood": user_profile["direction_mood"],
+                    "character_relationship": user_profile["character_relationship"],
+                    "ending_preference": user_profile["ending_preference"]
+                }
+                
+                # 영화 장르 가져오기 (첫 번째 장르 사용)
+                # from repositories.movie import MovieRepository - 사용하지 않는 모듈
+                movie = MovieRepository(db).get_with_details(db_review.movie_id)
+                genre = movie.genres[0].genre if movie and movie.genres else None
+                
+                # review 데이터 업데이트 (baseline 보존)
+                from utils.preference_helper import update_review_from_analysis
+                pref_repo = UserPreferenceRepository(db)
+                existing_pref = pref_repo.get_by_user_id(user_id)
+                
+                if existing_pref:
+                    updated_preference_json = update_review_from_analysis(
+                        existing_pref.preference_vector_json,
+                        analyzed_preference,
+                        genre=genre
+                    )
+                else:
+                    # 신규 사용자 (설문 안함)
+                    updated_preference_json = update_review_from_analysis(
+                        None,
+                        analyzed_preference,
+                        genre=genre
+                    )
+                
+                pref_repo.upsert(
+                    user_id=user_id,
+                    preference_vector_json=updated_preference_json,
+                    boost_tags=user_profile.get("boost_tags", []),
+                    dislike_tags=user_profile.get("dislike_tags", []),
+                    penalty_tags=[]
                 )
-            else:
-                # 신규 사용자 (설문 안함)
-                updated_preference_json = update_review_from_analysis(
-                    None,
-                    analyzed_preference,
-                    genre=genre
-                )
-            
-            pref_repo.upsert(
-                user_id=user_id,
-                preference_vector_json=updated_preference_json,
-                boost_tags=user_profile.get("boost_tags", []),
-                dislike_tags=user_profile.get("dislike_tags", []),
-                penalty_tags=[]
-            )
+            except Exception as analysis_error:
+                # 선호도 분석 실패는 로그만 남김 (리뷰 저장은 계속)
+                print(f"[Warning] Failed to analyze preference: {analysis_error}")
     except Exception as e:
         # 선호도 업데이트 실패는 치명적이지 않으므로 로그만 남김
         print(f"Failed to update user preference: {e}")
-        import traceback
-        traceback.print_exc()
     
     # Refresh to get user relationship
     db.refresh(db_review)
@@ -195,7 +198,8 @@ def update_review(
     
     MovieRepository(db).recalc_avg_rating(db_review.movie_id)
     
-    # 사용자 선호도 업데이트 (리뷰 기반)
+    # 사용자 선호도 업데이트 (리뷰 기반) - 비동기 처리로 변경하여 리뷰 저장 실패 방지
+    # 선호도 분석 실패는 로그만 남기고 리뷰 저장은 계속 진행
     try:
         user_id = db_review.user_id
         user_reviews = repo.get_by_user(user_id, skip=0, limit=100)
@@ -208,54 +212,56 @@ def update_review(
         if review_texts:
             combined_text = " ".join(review_texts[-10:])
             
-            user_profile = analyze_preference({
-                "text": combined_text,
-                "dislikes": ""
-            })
-            
-            # 분석 결과를 5개 카테고리로 구성
-            analyzed_preference = {
-                "emotion_scores": user_profile["emotion_scores"],
-                "narrative_traits": user_profile["narrative_traits"],
-                "direction_mood": user_profile["direction_mood"],
-                "character_relationship": user_profile["character_relationship"],
-                "ending_preference": user_profile["ending_preference"]
-            }
-            
-            # 영화 장르 가져오기 (첫 번째 장르 사용)
-            movie = MovieRepository(db).get_with_details(db_review.movie_id)
-            genre = movie.genres[0].genre if movie and movie.genres else None
-            
-            # review 데이터 업데이트 (baseline 보존)
-            from utils.preference_helper import update_review_from_analysis
-            pref_repo = UserPreferenceRepository(db)
-            existing_pref = pref_repo.get_by_user_id(user_id)
-            
-            if existing_pref:
-                updated_preference_json = update_review_from_analysis(
-                    existing_pref.preference_vector_json,
-                    analyzed_preference,
-                    genre=genre
+            try:
+                user_profile = analyze_preference({
+                    "text": combined_text,
+                    "dislikes": ""
+                })
+                
+                # 분석 결과를 5개 카테고리로 구성
+                analyzed_preference = {
+                    "emotion_scores": user_profile["emotion_scores"],
+                    "narrative_traits": user_profile["narrative_traits"],
+                    "direction_mood": user_profile["direction_mood"],
+                    "character_relationship": user_profile["character_relationship"],
+                    "ending_preference": user_profile["ending_preference"]
+                }
+                
+                # 영화 장르 가져오기 (첫 번째 장르 사용)
+                movie = MovieRepository(db).get_with_details(db_review.movie_id)
+                genre = movie.genres[0].genre if movie and movie.genres else None
+                
+                # review 데이터 업데이트 (baseline 보존)
+                from utils.preference_helper import update_review_from_analysis
+                pref_repo = UserPreferenceRepository(db)
+                existing_pref = pref_repo.get_by_user_id(user_id)
+                
+                if existing_pref:
+                    updated_preference_json = update_review_from_analysis(
+                        existing_pref.preference_vector_json,
+                        analyzed_preference,
+                        genre=genre
+                    )
+                else:
+                    # 신규 사용자 (설문 안함)
+                    updated_preference_json = update_review_from_analysis(
+                        None,
+                        analyzed_preference,
+                        genre=genre
+                    )
+                
+                pref_repo.upsert(
+                    user_id=user_id,
+                    preference_vector_json=updated_preference_json,
+                    boost_tags=user_profile.get("boost_tags", []),
+                    dislike_tags=user_profile.get("dislike_tags", []),
+                    penalty_tags=[]
                 )
-            else:
-                # 신규 사용자 (설문 안함)
-                updated_preference_json = update_review_from_analysis(
-                    None,
-                    analyzed_preference,
-                    genre=genre
-                )
-            
-            pref_repo.upsert(
-                user_id=user_id,
-                preference_vector_json=updated_preference_json,
-                boost_tags=user_profile.get("boost_tags", []),
-                dislike_tags=user_profile.get("dislike_tags", []),
-                penalty_tags=[]
-            )
+            except Exception as analysis_error:
+                # 선호도 분석 실패는 로그만 남김 (리뷰 저장은 계속)
+                print(f"[Warning] Failed to analyze preference: {analysis_error}")
     except Exception as e:
         print(f"Failed to update user preference: {e}")
-        import traceback
-        traceback.print_exc()
     
     result = repo.get_with_counts(review_id)
     

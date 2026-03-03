@@ -15,7 +15,6 @@ def _generate_template_explanation(
 ) -> str:
     """
     템플릿 기반 설명 생성 (LLM 없이도 작동)
-    description.py 스타일로 수정: 첫 문장에 확률 제거, 자연어 중심
     
     Args:
         prediction_result: A-3의 결과
@@ -26,33 +25,36 @@ def _generate_template_explanation(
     Returns:
         자연어 설명
     """
-    prob = prediction_result.get("probability", 0)
+    prob = prediction_result.get("probability", 0) * 100
     breakdown = prediction_result.get("breakdown", {})
-    top_factors = breakdown.get("top_factors", ["정서 톤", "서사 초점"])
+    top_factors = breakdown.get("top_factors", ["취향 요소"])
     
     # 30% 이하: 부정적 설명
-    if prob <= 0.30:
-        explanation = f'"{movie_title}"은 당신의 취향과 맞지 않을 수 있습니다. '
-        explanation += f'{top_factors[0] if top_factors else "정서"} 측면에서 차이가 있어요. '
+    if prob <= 30:
+        explanation = f'"{movie_title}"은 당신의 취향과 잘 맞지 않을 수 있습니다. '
+        explanation += f'{", ".join(top_factors)} 측면에서 차이가 있습니다. '
         
         if user_disliked_tags and len(user_disliked_tags) > 0:
-            explanation += f'특히 당신이 선호하지 않는 {user_disliked_tags[0]} 요소가 포함되어 있습니다. '
+            explanation += f'특히 당신이 선호하지 않는 {", ".join(user_disliked_tags[:3])} 요소가 포함되어 있습니다. '
     
     # 30-70%: 중립적 설명
-    elif prob <= 0.70:
-        explanation = f'"{movie_title}"은 당신의 취향과 어느 정도 맞을 수 있습니다. '
-        explanation += f'{top_factors[0] if top_factors else "정서"} 측면에서 흥미로운 포인트가 있어요. '
+    elif prob <= 70:
+        explanation = f'"{movie_title}"은 당신의 취향과 {prob:.0f}% 일치합니다. '
+        explanation += f'{", ".join(top_factors)} 측면에서 어느 정도 맞을 수 있습니다. '
         
         if user_liked_tags and len(user_liked_tags) > 0:
-            explanation += f'당신이 좋아하는 {user_liked_tags[0]} 요소가 일부 포함되어 있습니다. '
+            explanation += f'당신이 좋아하는 {", ".join(user_liked_tags[:2])} 요소가 일부 포함되어 있습니다. '
     
     # 70% 이상: 긍정적 설명
     else:
-        explanation = f'"{movie_title}"은 당신의 취향과 잘 맞을 것 같아요. '
-        explanation += f'{top_factors[0] if top_factors else "정서"} 측면에서 특히 좋은 포인트가 있습니다. '
+        explanation = f'"{movie_title}"은 당신의 취향과 {prob:.0f}% 일치합니다! '
+        explanation += f'특히 {", ".join(top_factors)} 측면에서 잘 맞습니다. '
         
         if user_liked_tags and len(user_liked_tags) > 0:
-            explanation += f'당신이 좋아하는 {user_liked_tags[0]} 요소가 강하게 나타나요. '
+            explanation += f'당신이 좋아하는 {", ".join(user_liked_tags[:3])} 요소가 강하게 나타납니다. '
+    
+    # 면책 조항
+    explanation += '이 예측은 정서·서사 분석 기반이므로 개인차가 있을 수 있습니다.'
     
     return explanation
 
@@ -109,70 +111,21 @@ def explain_prediction(payload: dict) -> dict:
         "breakdown": breakdown
     }
     
-    # LLM 기반 설명 생성 시도 (_build_explanation_prompt 사용)
+    # LLM 기반 설명 생성 시도
     try:
-        from ml.model_sample.analysis.description import (
-            get_bedrock_client, 
-            _build_explanation_prompt,
-            _build_factor_hints
-        )
-        import json
+        from ml.model_sample.analysis.description import generate_explanation, get_bedrock_client
         
         bedrock_client = get_bedrock_client()
-        
-        # 프롬프트 생성
-        top_factors = prediction_result.get("breakdown", {}).get("top_factors", ["정서 톤", "서사 초점"])[:2]
-        factor_hints = _build_factor_hints(
-            top_factors=top_factors,
-            user_liked_tags=user_liked_tags,
-            user_disliked_tags=user_disliked_tags,
-        )
-        
-        prompt = _build_explanation_prompt(
-            prediction_result=prediction_result,
-            movie_title=movie_title,
-            user_liked_tags=user_liked_tags,
-            user_disliked_tags=user_disliked_tags,
-            factor_hints=factor_hints,
-        )
-        
         if bedrock_client:
-            # Bedrock을 통한 LLM 호출
-            model_id = "anthropic.claude-3-haiku-20240307-v1:0"
-            request_body = {
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 300,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                "temperature": 0.3
-            }
-            
-            response = bedrock_client.invoke_model(
-                modelId=model_id,
-                body=json.dumps(request_body)
+            explanation = generate_explanation(
+                prediction_result=prediction_result,
+                movie_title=movie_title,
+                user_liked_tags=user_liked_tags,
+                user_disliked_tags=user_disliked_tags,
+                bedrock_client=bedrock_client
             )
-            
-            response_body = json.loads(response['body'].read())
-            
-            if 'content' in response_body and len(response_body['content']) > 0:
-                explanation = response_body['content'][0]['text'].strip()
-                # 설명 문구에서 퍼센트 수치 제거 (예: "87%", "79%")
-                import re
-                explanation = re.sub(r'\d+%', '', explanation)
-                explanation = explanation.strip()
-            else:
-                explanation = _generate_template_explanation(
-                    prediction_result,
-                    movie_title,
-                    user_liked_tags,
-                    user_disliked_tags
-                )
         else:
-            # Bedrock 없으면 템플릿 사용
+            # Bedrock 클라이언트 없으면 템플릿 사용
             explanation = _generate_template_explanation(
                 prediction_result,
                 movie_title,
@@ -189,15 +142,25 @@ def explain_prediction(payload: dict) -> dict:
             user_disliked_tags
         )
     
-    # 주요 요소 추출 (차원별 일치율 - 내부 계산용, 프론트엔드에서는 표시 안 함)
+    # 주요 요소 추출
+    key_factors = []
     if breakdown:
         emotion_sim   = breakdown.get("emotion_similarity", 0)
         narrative_sim = breakdown.get("narrative_similarity", 0)
         direction_sim = breakdown.get("direction_mood_similarity", breakdown.get("ending_similarity", 0))
+        
+        key_factors = [
+            {"category": "emotion",        "label": "정서 톤",    "score": round(emotion_sim, 2)},
+            {"category": "narrative",      "label": "서사 초점",  "score": round(narrative_sim, 2)},
+            {"category": "direction_mood", "label": "연출 분위기", "score": round(direction_sim, 2)},
+        ]
+        
+        # 점수 높은 순으로 정렬
+        key_factors.sort(key=lambda x: x["score"], reverse=True)
     
     result = {
         "movie_title": movie_title,
-        "match_rate": round(probability * 100, 1),
+        "match_rate": round(match_rate, 2),
         "explanation": explanation,
         "disclaimer": "추천은 정서·서사 태그 분석 기반이며 개인차가 있을 수 있습니다."
     }

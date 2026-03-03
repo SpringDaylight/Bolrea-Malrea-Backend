@@ -22,15 +22,11 @@ def build_user_profile(user_text: str, taxonomy: Dict) -> Dict:
     """
     e_keys = taxonomy['emotion']['tags']
     n_keys = taxonomy['story_flow']['tags']
-    dm_keys = taxonomy['direction_mood']['tags']
-    cr_keys = taxonomy['character_relationship']['tags']
     
     profile = {
         'user_text': user_text,
         'emotion_scores': embedding.score_tags(user_text, e_keys),
         'narrative_traits': embedding.score_tags(user_text, n_keys),
-        'direction_mood': embedding.score_tags(user_text, dm_keys),
-        'character_relationship': embedding.score_tags(user_text, cr_keys),
         'ending_preference': {
             'happy': embedding.stable_score(user_text, 'ending_happy'),
             'open': embedding.stable_score(user_text, 'ending_open'),

@@ -83,13 +83,19 @@ async def get_personalized_recommendations(
         print(f"✅ 사용자 선호도 로드 완료")
         
         # preference_vector_json에서 global 프로필 추출
-        pref_json = user_pref.preference_vector_json
-        if 'global' in pref_json:
-            # 신 형식: global 키가 있는 경우
-            user_profile = pref_json['global']
-        else:
-            # 구 형식: 최상위에 직접 있는 경우
-            user_profile = pref_json
+        # 장르 파라미터가 있으면 장르별 선호도 사용
+        from utils.preference_helper import get_preference_for_recommendation
+        
+        user_profile = get_preference_for_recommendation(
+            user_pref.preference_vector_json,
+            genre=None  # 개인 맞춤 추천은 항상 global 사용
+        )
+        
+        if not user_profile:
+            raise HTTPException(
+                status_code=404,
+                detail="사용자 선호도 프로필을 찾을 수 없습니다."
+            )
         
         # 2. watched 영화 ID 가져오기
         watched_repo = WatchedMovieRepository(db)

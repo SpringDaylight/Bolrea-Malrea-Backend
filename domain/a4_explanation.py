@@ -78,7 +78,6 @@ def explain_prediction(payload: dict) -> dict:
             "movie_title": str,
             "match_rate": float,
             "explanation": str,
-            "key_factors": List[Dict],
             "disclaimer": str
         }
     """
@@ -163,7 +162,6 @@ def explain_prediction(payload: dict) -> dict:
         "movie_title": movie_title,
         "match_rate": round(match_rate, 2),
         "explanation": explanation,
-        "key_factors": key_factors,
         "disclaimer": "추천은 정서·서사 태그 분석 기반이며 개인차가 있을 수 있습니다."
     }
     
